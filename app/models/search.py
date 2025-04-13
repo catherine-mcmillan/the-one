@@ -75,3 +75,16 @@ class SearchResult:
             cons=data.get('cons', []),
             tips=data.get('tips', [])
         )
+
+class SearchResult:
+    """Model for storing search results"""
+    
+    def __init__(self, title, url, rating=None, image_url=None, summary=None, pros=None, cons=None, tips=None):
+        self.title = title
+        self.url = url
+        self.rating = rating
+        self.image_url = image_url
+        self.summary = summary
+        self.pros = pros or []
+        self.cons = cons or []
+        self.tips = tips or []

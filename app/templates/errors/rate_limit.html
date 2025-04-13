@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header bg-warning text-dark">
+                    <h1 class="text-center mb-0">API Request Limit Reached</h1>
+                </div>
+                <div class="card-body text-center">
+                    <div class="mb-4">
+                        <i class="fas fa-exclamation-triangle fa-4x text-warning"></i>
+                    </div>
+                    <p class="lead">We've reached our daily limit for API requests.</p>
+                    <p>The Firecrawl free tier has a limit of 100 requests per day. We can't process any more searches
+                        until this limit resets.</p>
+                    <hr>
+                    <p><strong>The limit will reset at:</strong> {{ reset_time.strftime('%Y-%m-%d %H:%M:%S') }}</p>
+                    <div class="mt-4">
+                        <a href="{{ url_for('main.index') }}" class="btn btn-primary me-2">
+                            <i class="fas fa-home"></i> Go to Homepage
+                        </a>
+                        <a href="{{ url_for('main.search_history') }}" class="btn btn-outline-secondary">
+                            <i class="fas fa-history"></i> View Search History
+                        </a>
+                    </div>
+                </div>
+                <div class="card-footer text-muted">
+                    <small>Consider checking your search history or trying again after the reset time.</small>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add custom styles -->
+<style>
+    .card {
+        border: none;
+        box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+    }
+
+    .card-header {
+        border-bottom: none;
+        border-radius: 0.5rem 0.5rem 0 0;
+    }
+
+    .fa-exclamation-triangle {
+        animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+        0% {
+            transform: scale(1);
+        }
+
+        50% {
+            transform: scale(1.1);
+        }
+
+        100% {
+            transform: scale(1);
+        }
+    }
+</style>
+{% endblock %}

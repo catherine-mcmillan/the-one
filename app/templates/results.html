@@ -1,70 +1,150 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="row">
-    <div class="col-12">
-        <h1>Search Results</h1>
-        <p>Results for "{{ query }}" on {{ website }}</p>
+<div class="container mt-4">
+    <h1 class="mb-4">Search Results</h1>
+    <p class="lead">Results for "{{ query }}" on {{ website }}</p>
 
-        <div class="mb-4">
-            <a href="{{ url_for('main.index') }}" class="btn btn-secondary">New Search</a>
-        </div>
+    <div class="mb-4">
+        <a href="{{ url_for('main.index') }}" class="btn btn-outline-primary">New Search</a>
 
-        <div class="row" id="results-container">
-            <!-- Results will be populated dynamically -->
-            {% if results %}
-            {% for result in results %}
-            <div class="col-md-6 col-lg-4 mb-4">
-                <div class="card h-100">
-                    {% if result.image_url %}
+        {% if ranking_type == 'ratings' %}
+        <span class="badge bg-info text-white ms-2">Ranked by Ratings & Comments</span>
+        {% else %}
+        <span class="badge bg-secondary text-white ms-2">Ranked by Relevance</span>
+        {% endif %}
+    </div>
+
+    {% if results %}
+    <div class="row">
+        {% for result in results %}
+        <div class="col-md-6 col-lg-4 mb-4">
+            <div class="card h-100">
+                {% if result.image_url %}
+                <div class="card-img-container">
                     <img src="{{ result.image_url }}" class="card-img-top" alt="{{ result.title }}">
-                    {% endif %}
-                    <div class="card-body">
-                        <h5 class="card-title">{{ result.title }}</h5>
-                        {% if result.rating %}
-                        <p class="card-text">Rating: {{ result.rating }}/5</p>
-                        {% endif %}
-                        <a href="{{ result.url }}" class="btn btn-primary" target="_blank">View</a>
+                </div>
+                {% endif %}
+
+                <div class="card-body">
+                    <h5 class="card-title">{{ result.title }}</h5>
+
+                    {% if result.rating %}
+                    <div class="mb-2">
+                        <div class="rating">
+                            <span class="badge bg-success">{{ result.rating }} / 5</span>
+                            <div class="stars">
+                                {% for i in range(5) %}
+                                {% if i < result.rating|int %} <i class="fas fa-star text-warning"></i>
+                                    {% elif i < result.rating %} <i class="fas fa-star-half-alt text-warning"></i>
+                                        {% else %}
+                                        <i class="far fa-star text-warning"></i>
+                                        {% endif %}
+                                        {% endfor %}
+                            </div>
+                        </div>
                     </div>
-                    {% if result.summary %}
-                    <div class="card-footer">
-                        <h6>Summary of User Feedback:</h6>
-                        <p>{{ result.summary }}</p>
-                        {% if result.pros %}
-                        <strong>Pros:</strong>
-                        <ul>
-                            {% for pro in result.pros %}
-                            <li>{{ pro }}</li>
-                            {% endfor %}
-                        </ul>
+                    {% endif %}
+
+                    <a href="{{ result.url }}" class="btn btn-primary mt-2" target="_blank">View Original</a>
+                </div>
+
+                {% if ranking_type == 'ratings' and (result.summary or result.pros or result.cons or result.tips) %}
+                <div class="card-footer bg-light">
+                    <div class="comment-summary">
+                        {% if result.summary %}
+                        <h6 class="fw-bold">User Feedback Summary:</h6>
+                        <p class="small">{{ result.summary }}</p>
+                        <hr class="my-2">
                         {% endif %}
-                        {% if result.cons %}
-                        <strong>Cons:</strong>
-                        <ul>
-                            {% for con in result.cons %}
-                            <li>{{ con }}</li>
-                            {% endfor %}
-                        </ul>
-                        {% endif %}
+
+                        <div class="row">
+                            {% if result.pros %}
+                            <div class="col-md-6">
+                                <h6 class="text-success"><i class="fas fa-thumbs-up"></i> Pros:</h6>
+                                <ul class="small pros-list">
+                                    {% for pro in result.pros %}
+                                    <li>{{ pro }}</li>
+                                    {% endfor %}
+                                </ul>
+                            </div>
+                            {% endif %}
+
+                            {% if result.cons %}
+                            <div class="col-md-6">
+                                <h6 class="text-danger"><i class="fas fa-thumbs-down"></i> Cons:</h6>
+                                <ul class="small cons-list">
+                                    {% for con in result.cons %}
+                                    <li>{{ con }}</li>
+                                    {% endfor %}
+                                </ul>
+                            </div>
+                            {% endif %}
+                        </div>
+
                         {% if result.tips %}
-                        <strong>Tips:</strong>
-                        <ul>
+                        <h6 class="text-info mt-2"><i class="fas fa-lightbulb"></i> Tips:</h6>
+                        <ul class="small tips-list">
                             {% for tip in result.tips %}
                             <li>{{ tip }}</li>
                             {% endfor %}
                         </ul>
                         {% endif %}
                     </div>
-                    {% endif %}
                 </div>
+                {% endif %}
             </div>
-            {% endfor %}
-            {% else %}
-            <div class="col-12">
-                <div class="alert alert-info">No results found. Try a different search term.</div>
-            </div>
-            {% endif %}
         </div>
+        {% endfor %}
     </div>
+    {% else %}
+    <div class="alert alert-info">
+        <h4 class="alert-heading">No results found!</h4>
+        <p>We couldn't find any results matching your search. Please try a different search term or website.</p>
+    </div>
+    {% endif %}
 </div>
+
+<!-- Add styles -->
+<style>
+    .card-img-container {
+        height: 180px;
+        overflow: hidden;
+    }
+
+    .card-img-top {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+
+    .rating {
+        display: flex;
+        align-items: center;
+    }
+
+    .stars {
+        margin-left: 10px;
+    }
+
+    .pros-list li {
+        color: #198754;
+    }
+
+    .cons-list li {
+        color: #dc3545;
+    }
+
+    .tips-list li {
+        color: #0dcaf0;
+    }
+
+    .comment-summary {
+        max-height: 350px;
+        overflow-y: auto;
+    }
+</style>
+
+<!-- Include Font Awesome for icons -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
 {% endblock %}

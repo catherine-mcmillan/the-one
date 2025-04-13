@@ -1,13 +1,63 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="container text-center mt-5">
-    <h1 class="display-1 text-muted">404</h1>
-    <h2 class="mb-4">Page Not Found</h2>
-    <p class="lead mb-4">The page you're looking for doesn't exist.</p>
-    <div class="d-flex justify-content-center gap-3">
-        <a href="{{ url_for('main.index') }}" class="btn btn-primary">Go to Homepage</a>
-        <button onclick="history.back()" class="btn btn-outline-secondary">Go Back</button>
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header bg-info text-white">
+                    <h1 class="text-center mb-0">Page Not Found</h1>
+                </div>
+                <div class="card-body text-center">
+                    <div class="mb-4">
+                        <i class="fas fa-search fa-4x text-info"></i>
+                    </div>
+                    <p class="lead">Oops! We couldn't find the page you're looking for.</p>
+                    <p>The page you requested does not exist or has been moved to a different location.</p>
+                    <hr>
+                    <div class="mt-4">
+                        <a href="{{ url_for('main.index') }}" class="btn btn-primary me-2">
+                            <i class="fas fa-home"></i> Return to Homepage
+                        </a>
+                        <button onclick="window.history.back()" class="btn btn-outline-secondary">
+                            <i class="fas fa-arrow-left"></i> Go Back
+                        </button>
+                    </div>
+                </div>
+                <div class="card-footer text-muted">
+                    <small>If you believe this is an error, please check the URL and try again.</small>
+                </div>
+            </div>
+        </div>
     </div>
 </div>
+
+<!-- Add custom styles -->
+<style>
+    .card {
+        border: none;
+        box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+    }
+
+    .card-header {
+        border-bottom: none;
+        border-radius: 0.5rem 0.5rem 0 0;
+    }
+
+    .fa-search {
+        animation: bounce 2s infinite;
+    }
+
+    @keyframes bounce {
+
+        0%,
+        100% {
+            transform: translateY(0);
+        }
+
+        50% {
+            transform: translateY(-10px);
+        }
+    }
+</style>
 {% endblock %}

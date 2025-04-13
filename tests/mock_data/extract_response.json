@@ -1,0 +1,31 @@
+{
+    "title": "Best Chocolate Chip Cookies",
+    "url": "https://example.com/recipe/1",
+    "rating": 4.8,
+    "imageUrl": "https://example.com/image1.jpg",
+    "commentSummary": {
+        "summary": "Users love these cookies for their perfect texture and rich flavor. The recipe consistently produces excellent results.",
+        "pros": [
+            "Easy to make",
+            "Perfect texture - crispy outside, chewy inside",
+            "Rich chocolate flavor",
+            "Consistent results"
+        ],
+        "cons": [
+            "Takes time to chill the dough",
+            "Can be too sweet for some",
+            "Requires precise temperature control"
+        ],
+        "tips": [
+            "Use high-quality chocolate chips",
+            "Chill the dough for at least 1 hour",
+            "Add a pinch of sea salt on top before baking",
+            "Let cookies cool on the baking sheet for 5 minutes"
+        ]
+    },
+    "metadata": {
+        "totalComments": 256,
+        "averageRating": 4.8,
+        "dateExtracted": "2024-03-20T12:00:00Z"
+    }
+}

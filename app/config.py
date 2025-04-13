@@ -5,6 +5,9 @@ from dotenv import load_dotenv
 # Load environment variables from .env file
 load_dotenv()
 
+# Get the absolute path of the project root directory
+basedir = os.path.abspath(os.path.dirname(os.path.dirname(__file__)))
+
 class Config:
     """Base configuration class"""
     SECRET_KEY = os.environ.get('SECRET_KEY') or 'dev-key-not-secure'
@@ -27,7 +30,7 @@ class Config:
     PERMANENT_SESSION_LIFETIME = timedelta(days=1)
     
     # Database settings
-    SQLITE_DB = os.environ.get('SQLITE_DB') or 'app.db'
+    SQLITE_DB = os.environ.get('SQLITE_DB') or os.path.join(basedir, 'data', 'app.db')
     SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL') or f'sqlite:///{SQLITE_DB}'
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     
@@ -38,6 +41,9 @@ class DevelopmentConfig(Config):
     """Development configuration"""
     DEBUG = True
     LOG_LEVEL = 'DEBUG'
+    
+    # Use file-based database for development
+    SQLALCHEMY_DATABASE_URI = 'sqlite:///app.db'
     
     # Lower cache timeout for development
     CACHE_DEFAULT_TIMEOUT = 300  # 5 minutes

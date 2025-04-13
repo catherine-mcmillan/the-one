@@ -1,10 +1,25 @@
-from app.config import Config
+import os
+from datetime import timedelta
 
-class TestConfig(Config):
+class TestConfig:
     TESTING = True
-    WTF_CSRF_ENABLED = False
-    SQLALCHEMY_DATABASE_URI = 'sqlite:///:memory:'  # Use in-memory SQLite for testing
+    SQLALCHEMY_DATABASE_URI = 'sqlite://'  # Use in-memory database for testing
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     SECRET_KEY = 'test-secret-key'
-    FIRECRAWL_API_KEY = 'fc-c9b26ff85a964f1aaf8ae70aab2ba002'
-    FIRECRAWL_BASE_URL = 'https://api.firecrawl.dev'
+    
+    # Firecrawl API settings
+    FIRECRAWL_API_KEY = 'test-api-key'
+    FIRECRAWL_BASE_URL = 'https://api.firecrawl.com'
+    FIRECRAWL_DAILY_LIMIT = 100
+    
+    # Cache settings
+    CACHE_TYPE = 'simple'
+    CACHE_DEFAULT_TIMEOUT = 300  # 5 minutes for testing
+    
+    # Session settings
+    PERMANENT_SESSION_LIFETIME = timedelta(days=1)
+    
+    # Development mode settings
+    DEV_MODE = True
+    MAX_RESULTS_DEV = 2
+    USE_SMALLER_MODEL = True

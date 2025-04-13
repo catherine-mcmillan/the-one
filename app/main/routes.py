@@ -25,6 +25,9 @@ def search():
         return redirect(url_for('main.index'))
     
     try:
+        # Perform the search
+        results = search_website(website, query, ranking_type)
+        
         # Store search history
         search_history = UserSearchHistory(
             user_id=current_user.id,
@@ -36,18 +39,16 @@ def search():
         db.session.add(search_history)
         db.session.commit()
         
-        # Perform search
-        results = search_website(website, query, ranking_type)
-        
-        flash('Search completed successfully!', 'success')
-        return render_template('results.html', 
-                             results=results,
-                             website=website,
-                             query=query,
-                             ranking_type=ranking_type)
-                             
+        # Render the results template
+        return render_template('results.html',
+                            website=website,
+                            query=query,
+                            results=results,
+                            ranking_type=ranking_type)
+    
     except Exception as e:
-        flash(f'Error performing search: {str(e)}', 'error')
+        current_app.logger.error(f"Search error: {str(e)}")
+        flash('An error occurred during the search. Please try again.', 'error')
         return redirect(url_for('main.index'))
 
 @bp.route('/results/<search_id>')

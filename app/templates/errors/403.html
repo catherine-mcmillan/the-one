@@ -1,13 +1,67 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="container text-center mt-5">
-    <h1 class="display-1 text-muted">403</h1>
-    <h2 class="mb-4">Access Forbidden</h2>
-    <p class="lead mb-4">You don't have permission to access this page.</p>
-    <div class="d-flex justify-content-center gap-3">
-        <a href="{{ url_for('main.index') }}" class="btn btn-primary">Go to Homepage</a>
-        <button onclick="history.back()" class="btn btn-outline-secondary">Go Back</button>
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header bg-secondary text-white">
+                    <h1 class="text-center mb-0">Access Denied</h1>
+                </div>
+                <div class="card-body text-center">
+                    <div class="mb-4">
+                        <i class="fas fa-lock fa-4x text-secondary"></i>
+                    </div>
+                    <p class="lead">Sorry! You don't have permission to access this page.</p>
+                    <p>This area is restricted. Please make sure you have the necessary permissions.</p>
+                    <hr>
+                    <div class="mt-4">
+                        <a href="{{ url_for('main.index') }}" class="btn btn-primary me-2">
+                            <i class="fas fa-home"></i> Return to Homepage
+                        </a>
+                        <button onclick="window.history.back()" class="btn btn-outline-secondary">
+                            <i class="fas fa-arrow-left"></i> Go Back
+                        </button>
+                    </div>
+                </div>
+                <div class="card-footer text-muted">
+                    <small>If you believe you should have access, please contact your administrator.</small>
+                </div>
+            </div>
+        </div>
     </div>
 </div>
+
+<!-- Add custom styles -->
+<style>
+    .card {
+        border: none;
+        box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+    }
+
+    .card-header {
+        border-bottom: none;
+        border-radius: 0.5rem 0.5rem 0 0;
+    }
+
+    .fa-lock {
+        animation: wiggle 2s infinite;
+    }
+
+    @keyframes wiggle {
+
+        0%,
+        100% {
+            transform: rotate(0);
+        }
+
+        25% {
+            transform: rotate(-10deg);
+        }
+
+        75% {
+            transform: rotate(10deg);
+        }
+    }
+</style>
 {% endblock %}
