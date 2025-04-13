@@ -127,84 +127,44 @@ class FirecrawlAPIManager:
             current_app.logger.error(f"Firecrawl API error: {str(e)}")
             return {"error": str(e)}
 
-def search_website(website, query, ranking_type="relevance", save_to_history=False, user_id=None):
-    """
-    Search for products/content on the specified website using Firecrawl API
-    
-    Args:
-        website (str): Website to search (e.g., allrecipes.com)
-        query (str): Search query
-        ranking_type (str): 'relevance' or 'ratings'
-        save_to_history (bool): Whether to save to user's history
-        user_id (int): User ID if saving to history
-        
-    Returns:
-        list: List of search results
-    """
-    # Check cache first
-    cache_key = f"{website}:{query}"
-    cached_results = SearchCache.query.filter_by(
-        website=website,
-        query=query
-    ).first()
-    
-    if cached_results and not cached_results.is_expired:
-        results = json.loads(cached_results.results)
-        current_app.logger.info(f"Serving cached results for {cache_key}")
-        
-        if save_to_history and user_id:
-            save_to_user_history(user_id, website, query, results)
-            
-        return results
-    
-    api_key = current_app.config.get('FIRECRAWL_API_KEY')
-    api_manager = FirecrawlAPIManager(api_key)
-    
+def search_website(website, query, ranking_type='relevance'):
+    """Search a specific website for recipes"""
     try:
-        # Use the extraction endpoint for search
-        search_data = api_manager.search(website, query)
+        # Check cache first
+        query_hash = str(hash(f"{website}:{query}"))
+        cached = SearchCache.query.filter_by(
+            query_hash=query_hash,
+            website=website
+        ).first()
         
-        if "error" in search_data:
-            current_app.logger.error(f"Search error: {search_data['error']}")
-            return []
+        if cached and cached.expires_at > datetime.utcnow():
+            results = json.loads(cached.results)
+            current_app.logger.info(f"Serving cached results for {query_hash}")
+            return results
         
-        # Process the search results
-        results = []
-        if 'data' in search_data and 'json' in search_data['data']:
-            for item in tqdm(search_data['data']['json']['results'], desc="Processing search results"):
-                result = SearchResult(
-                    title=item.get('title', 'No Title'),
-                    url=item.get('url', ''),
-                    rating=item.get('rating'),
-                    image_url=item.get('image_url'),
-                    summary=item.get('summary'),
-                    pros=item.get('pros', []),
-                    cons=item.get('cons', []),
-                    tips=item.get('tips', [])
-                )
-                results.append(result)
+        # If not in cache, perform search
+        results = api_manager.search(website, query, ranking_type)
         
         # Cache the results
         cache_results(website, query, results)
         
-        # Save to user history if requested
-        if save_to_history and user_id:
-            save_to_user_history(user_id, website, query, results)
-            
         return results
-    
     except Exception as e:
-        current_app.logger.error(f"Error in search_website: {str(e)}")
-        return []
+        logger.error(f"Error searching website {website}: {str(e)}")
+        raise
 
 def cache_results(website, query, results):
     """Cache the search results"""
     expires_at = datetime.utcnow() + CACHE_DURATION
     results_json = json.dumps(results)
     
+    # Generate a unique hash for the query
+    query_hash = str(hash(f"{website}:{query}"))
+    
     cache_entry = SearchCache(
         website=website,
         query=query,
+        query_hash=query_hash,
         results=results_json,
         expires_at=expires_at
     )

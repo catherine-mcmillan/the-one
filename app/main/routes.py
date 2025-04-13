@@ -21,28 +21,34 @@ def search():
     ranking_type = request.form.get('ranking_type', 'relevance')
     
     if not website or not query:
-        flash('Please provide both a website and a search query', 'error')
+        flash('Please provide both website and search query', 'error')
         return redirect(url_for('main.index'))
     
-    # Store search history
-    search_history = UserSearchHistory(
-        user_id=current_user.id,
-        website=website,
-        search_query=query,
-        ranking_type=ranking_type,
-        created_at=datetime.utcnow()
-    )
-    db.session.add(search_history)
-    db.session.commit()
-    
-    # Perform the search
-    results = search_website(website, query, ranking_type)
-    
-    return render_template('main/results.html', 
-                         results=results,
-                         website=website,
-                         query=query,
-                         ranking_type=ranking_type)
+    try:
+        # Store search history
+        search_history = UserSearchHistory(
+            user_id=current_user.id,
+            website=website,
+            search_query=query,
+            ranking_type=ranking_type,
+            created_at=datetime.utcnow()
+        )
+        db.session.add(search_history)
+        db.session.commit()
+        
+        # Perform search
+        results = search_website(website, query, ranking_type)
+        
+        flash('Search completed successfully!', 'success')
+        return render_template('results.html', 
+                             results=results,
+                             website=website,
+                             query=query,
+                             ranking_type=ranking_type)
+                             
+    except Exception as e:
+        flash(f'Error performing search: {str(e)}', 'error')
+        return redirect(url_for('main.index'))
 
 @bp.route('/results/<search_id>')
 @login_required
