@@ -6,7 +6,7 @@ from tqdm import tqdm  # For progress tracking
 from app.models import SearchCache, UserSearchHistory, SearchResult
 from app.extensions import db, cache
 from pydantic import BaseModel, Field
-from typing import List, Optional
+from typing import List, Optional, Any, Dict
 from firecrawl import FirecrawlApp
 import requests
 import hashlib
@@ -17,20 +17,27 @@ MAX_RESULTS_DEV = 2  # Limit results during development (1 credit per page)
 USE_SMALLER_MODEL = True  # Use smaller model for development
 CACHE_DURATION = timedelta(hours=24)  # Cache results for 24 hours
 
-class ProductSchema(BaseModel):
-    """Schema for product information"""
-    title: str
-    url: str
-    rating: Optional[float] = None
-    image_url: Optional[str] = None
-    summary: Optional[str] = None
-    pros: Optional[List[str]] = None
-    cons: Optional[List[str]] = None
-    tips: Optional[List[str]] = None
+class NestedModel(BaseModel):
+    """Schema for individual search results"""
+    rank: float = Field(description="Ranking of the result")
+    title: str = Field(description="Title of the result")
+    summary: str = Field(description="Summary of the result")
+    big_difference: Optional[str] = Field(None, description="What makes this result unique")
+    key_takeaways: Optional[str] = Field(None, description="Key takeaways from the result")
+    pros: Optional[str] = Field(None, description="Positive aspects")
+    cons: Optional[str] = Field(None, description="Negative aspects")
+    tips_and_tricks: Optional[str] = Field(None, description="Tips and tricks")
+    url: Optional[str] = Field(None, description="URL of the result")
+    image_url: Optional[str] = Field(None, description="Image URL if available")
+    rating: Optional[float] = Field(None, description="Rating if available")
 
-class SearchResultsSchema(BaseModel):
-    """Schema for list of search results"""
-    results: List[ProductSchema] = Field(..., max_items=10)
+class ResultsContainer(BaseModel):
+    """Container for results with dynamic key"""
+    results: List[NestedModel] = Field(description="List of search results")
+
+class SearchResponse(BaseModel):
+    """Top-level response schema"""
+    data: List[Dict[str, List[NestedModel]]] = Field(description="List of result containers")
 
 class FirecrawlAPIManager:
     """Manager for Firecrawl API requests with rate limit handling"""
@@ -54,14 +61,41 @@ class FirecrawlAPIManager:
         }
         payload = {
             "url": f"https://{website}",
-            "query": query
+            "query": query,
+            "schema": SearchResponse.model_json_schema(),
+            "enable_web_search": True
         }
         
         try:
             response = requests.post(url, headers=headers, json=payload)
             response.raise_for_status()
             self.daily_requests += 1
-            return response.json()
+            
+            # Parse and validate response against our schema
+            search_response = SearchResponse(**response.json())
+            
+            # Extract results from the nested structure
+            results = []
+            for container in search_response.data:
+                for key, items in container.items():
+                    for item in items:
+                        result = NestedModel(
+                            rank=item.rank,
+                            title=item.title,
+                            summary=item.summary,
+                            big_difference=item.big_difference,
+                            key_takeaways=item.key_takeaways,
+                            pros=item.pros,
+                            cons=item.cons,
+                            tips_and_tricks=item.tips_and_tricks,
+                            url=item.url,
+                            image_url=item.image_url,
+                            rating=item.rating
+                        )
+                        results.append(result)
+            
+            return results
+            
         except requests.exceptions.RequestException as e:
             current_app.logger.error(f"Search API error: {str(e)}")
             if hasattr(e, 'response') and e.response is not None:
@@ -72,7 +106,7 @@ class FirecrawlAPIManager:
             raise APIError(f"Firecrawl API error: {str(e)}")
     
     def extract(self, url, include_comments=True, summarize_comments=True):
-        """Extract content from a URL with optional comment summarization"""
+        """Extract content from a URL with optional comment analysis"""
         self._check_rate_limit()
         
         extract_url = f"{self.base_url}/v1/extract"
@@ -83,14 +117,18 @@ class FirecrawlAPIManager:
         payload = {
             "url": url,
             "include_comments": include_comments,
-            "summarize_comments": summarize_comments
+            "summarize_comments": summarize_comments,
+            "schema": NestedModel.model_json_schema()
         }
         
         try:
             response = requests.post(extract_url, headers=headers, json=payload)
             response.raise_for_status()
             self.daily_requests += 1
-            return response.json()
+            
+            # Parse and validate response against our schema
+            result = NestedModel(**response.json())
+            return result.dict()
         except requests.exceptions.RequestException as e:
             current_app.logger.error(f"Extract API error: {str(e)}")
             if hasattr(e, 'response') and e.response is not None:
@@ -172,15 +210,22 @@ def search_website_internal(website, query, ranking_type="relevance"):
         results = []
         if 'results' in search_data:
             for item in search_data['results']:
-                result = SearchResult(
+                result = NestedModel(
+                    rank=item.get('rank', 0.0),
                     title=item.get('title', 'No Title'),
+                    summary=item.get('summary', ''),
+                    big_difference=item.get('big_difference'),
+                    key_takeaways=item.get('key_takeaways'),
+                    pros=item.get('pros', ''),
+                    cons=item.get('cons', ''),
+                    tips_and_tricks=item.get('tips_and_tricks'),
                     url=item.get('url', ''),
-                    rating=item.get('rating'),
-                    image_url=item.get('imageUrl')
+                    image_url=item.get('image_url'),
+                    rating=item.get('rating')
                 )
                 results.append(result)
         
-        # If ratings-based ranking is requested, get detailed info including comments
+        # If ratings-based ranking is requested, get detailed info
         if ranking_type == "ratings" and results:
             # Limit to top 5 results to conserve API usage
             detailed_results = []
@@ -199,16 +244,14 @@ def search_website_internal(website, query, ranking_type="relevance"):
                         summarize_comments=True
                     )
                     
-                    # Extract comment summaries if available
-                    if 'commentSummary' in extract_data:
-                        result.summary = extract_data['commentSummary'].get('summary', '')
-                        result.pros = extract_data['commentSummary'].get('pros', [])
-                        result.cons = extract_data['commentSummary'].get('cons', [])
-                        result.tips = extract_data['commentSummary'].get('tips', [])
-                    
-                    # Update rating if available
-                    if 'rating' in extract_data and extract_data['rating']:
-                        result.rating = extract_data['rating']
+                    # Update result with extracted data
+                    result.summary = extract_data.get('summary', result.summary)
+                    result.big_difference = extract_data.get('big_difference', result.big_difference)
+                    result.key_takeaways = extract_data.get('key_takeaways', result.key_takeaways)
+                    result.pros = extract_data.get('pros', result.pros)
+                    result.cons = extract_data.get('cons', result.cons)
+                    result.tips_and_tricks = extract_data.get('tips_and_tricks', result.tips_and_tricks)
+                    result.rating = extract_data.get('rating', result.rating)
                     
                     # Cache the detailed result
                     cache.set(detail_cache_key, result)
@@ -219,7 +262,7 @@ def search_website_internal(website, query, ranking_type="relevance"):
             detailed_results.sort(key=lambda x: x.rating if x.rating else 0, reverse=True)
             results = detailed_results
         
-        # Cache the final results
+        # Cache the results
         cache.set(cache_key, results)
         return results
     
@@ -320,9 +363,9 @@ def get_detailed_results(basic_results, website):
             # Extract comment summaries and organization
             if 'commentSummary' in data:
                 result['summary'] = data['commentSummary'].get('summary', '')
-                result['pros'] = data['commentSummary'].get('pros', [])
-                result['cons'] = data['commentSummary'].get('cons', [])
-                result['tips'] = data['commentSummary'].get('tips', [])
+                result['pros'] = data['commentSummary'].get('pros', '')
+                result['cons'] = data['commentSummary'].get('cons', '')
+                result['tips'] = data['commentSummary'].get('tips', '')
             
             # Update rating if available in detailed data
             if 'rating' in data and data['rating']:
