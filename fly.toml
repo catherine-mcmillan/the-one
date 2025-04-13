@@ -1,13 +1,14 @@
 app = "the-one"
-primary_region = "ord"
+primary_region = "lax"
 
 [build]
-  builder = "paketobuildpacks/builder:base"
+  dockerfile = "Dockerfile"
 
 [env]
-  PORT = "8080"
   FLASK_APP = "run.py"
   FLASK_ENV = "production"
+  SECRET_KEY = "c0abe021f9cff196d74b17f27a3ecf64ffe76abe3059143813221d78d97fd2fb"
+  FIRECRAWL_API_KEY = "fc-c9b26ff85a964f1aaf8ae70aab2ba002"
 
 [http_service]
   internal_port = 8080
@@ -16,6 +17,13 @@ primary_region = "ord"
   auto_start_machines = true
   min_machines_running = 0
   processes = ["app"]
+
+[[mounts]]
+  source = "the_one_data"
+  destination = "/data"
+
+[deploy]
+  release_command = "python init_db.py"
 
 [[services]]
   protocol = "tcp"
@@ -27,7 +35,3 @@ primary_region = "ord"
   [[services.ports]]
     port = 443
     handlers = ["tls", "http"]
-
-[mounts]
-  source="the_one_data"
-  destination="/data"

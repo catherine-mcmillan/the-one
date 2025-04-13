@@ -1,4 +1,17 @@
 from datetime import datetime
+from app.extensions import db
+
+class UserSearchHistory(db.Model):
+    """Model for storing user search history"""
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    website = db.Column(db.String(255), nullable=False)
+    search_query = db.Column(db.String(255), nullable=False)
+    ranking_type = db.Column(db.String(50), default='relevance')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def __repr__(self):
+        return f'<UserSearchHistory {self.search_query} on {self.website}>'
 
 class SearchResult:
     """Model for search results"""

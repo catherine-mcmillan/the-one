@@ -13,3 +13,8 @@ class Config:
     # Session configuration
     SESSION_TYPE = 'filesystem'
     PERMANENT_SESSION_LIFETIME = 1800  # 30 minutes
+    
+    # Database configuration
+    SQLITE_DB = os.environ.get('SQLITE_DB', '/data/app.db')
+    SQLALCHEMY_DATABASE_URI = f'sqlite:////{SQLITE_DB}'  # Use absolute path with 4 slashes
+    SQLALCHEMY_TRACK_MODIFICATIONS = False

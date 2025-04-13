@@ -26,11 +26,12 @@ class UserSearchHistory(db.Model):
     """Model for storing user's search history"""
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    query = db.Column(db.String(500), nullable=False)
-    website = db.Column(db.String(255), nullable=False)
-    results = db.Column(db.Text, nullable=False)  # JSON stored as text
+    search_query = db.Column(db.String(255), nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     notes = db.Column(db.Text)  # Optional user notes about the search
+    
+    def __repr__(self):
+        return f'<UserSearchHistory {self.search_query}>'
     
     def get_results(self):
         return json.loads(self.results)

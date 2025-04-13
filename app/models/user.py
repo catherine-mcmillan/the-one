@@ -1,7 +1,7 @@
+from app.extensions import db
 from datetime import datetime
-from flask_login import UserMixin
 from werkzeug.security import generate_password_hash, check_password_hash
-from app import db, login_manager
+from flask_login import UserMixin
 import re
 from email_validator import validate_email, EmailNotValidError
 
@@ -19,8 +19,8 @@ class User(UserMixin, db.Model):
     failed_login_attempts = db.Column(db.Integer, default=0)
     last_failed_login = db.Column(db.DateTime)
     
-    # Relationship with search history
-    searches = db.relationship('UserSearchHistory', backref='user', lazy='dynamic')
+    # Relationship with search history using string reference
+    search_history = db.relationship('UserSearchHistory', backref='user', lazy='dynamic')
     
     def __repr__(self):
         return f'<User {self.username}>'
@@ -92,11 +92,11 @@ class User(UserMixin, db.Model):
     
     @property
     def total_searches(self):
-        return self.searches.count()
+        return self.search_history.count()
     
     @property
     def recent_searches(self):
-        return self.searches.order_by(UserSearchHistory.created_at.desc()).limit(5).all()
+        return self.search_history.order_by(UserSearchHistory.created_at.desc()).limit(5).all()
     
     def update_last_login(self):
         self.last_login = datetime.utcnow()

@@ -3,9 +3,8 @@ from flask import current_app
 from datetime import datetime, timedelta
 import json
 from tqdm import tqdm  # For progress tracking
-from app.models.search import SearchResult
-from app.models.search_history import SearchCache, UserSearchHistory
-from app import db
+from app.models import SearchCache, UserSearchHistory, SearchResult
+from app.extensions import db
 
 # DEVELOPMENT MODE SETTINGS - REMOVE IN PRODUCTION
 DEV_MODE = True  # Set to False in production
@@ -25,17 +24,17 @@ def search_website(website, query, ranking_type="relevance", save_to_history=Fal
         user_id (int): User ID if saving to history
         
     Returns:
-        list: List of SearchResult objects
+        list: List of search results
     """
     # Check cache first
-    cache_key = SearchCache.cache_key(website, query)
+    cache_key = f"{website}:{query}"
     cached_results = SearchCache.query.filter_by(
         website=website,
         query=query
     ).first()
     
     if cached_results and not cached_results.is_expired:
-        results = [SearchResult(**r) for r in cached_results.get_results()]
+        results = json.loads(cached_results.results)
         current_app.logger.info(f"Serving cached results for {cache_key}")
         
         if save_to_history and user_id:
@@ -45,6 +44,8 @@ def search_website(website, query, ranking_type="relevance", save_to_history=Fal
     
     api_key = current_app.config.get('FIRECRAWL_API_KEY')
     base_url = current_app.config.get('FIRECRAWL_BASE_URL')
+    
+    # Construct URL for the search API endpoint
     search_url = f"{base_url}/v1/search"
     
     headers = {
@@ -60,22 +61,26 @@ def search_website(website, query, ranking_type="relevance", save_to_history=Fal
     }
     
     try:
-        response = requests.post(search_url, headers=headers, json=payload)
-        response.raise_for_status()
+        with tqdm(total=1, desc="Searching website") as pbar:
+            response = requests.post(search_url, headers=headers, json=payload)
+            response.raise_for_status()  # Raise an exception for HTTP errors
+            pbar.update(1)
         
         data = response.json()
-        results = []
         
+        # Process the search results
+        results = []
         if 'results' in data:
-            for item in tqdm(data['results'], desc="Processing search results"):
-                result = SearchResult(
-                    title=item.get('title', 'No Title'),
-                    url=item.get('url', ''),
-                    rating=item.get('rating'),
-                    image_url=item.get('imageUrl')
-                )
+            for item in data['results']:
+                result = {
+                    'title': item.get('title', 'No Title'),
+                    'url': item.get('url', ''),
+                    'rating': item.get('rating'),
+                    'image_url': item.get('imageUrl')
+                }
                 results.append(result)
         
+        # If ratings-based ranking is requested, get additional details
         if ranking_type == "ratings" and results and not DEV_MODE:
             results = get_detailed_results(results, website)
         
@@ -95,7 +100,7 @@ def search_website(website, query, ranking_type="relevance", save_to_history=Fal
 def cache_results(website, query, results):
     """Cache the search results"""
     expires_at = datetime.utcnow() + CACHE_DURATION
-    results_json = json.dumps([r.__dict__ for r in results])
+    results_json = json.dumps(results)
     
     cache_entry = SearchCache(
         website=website,
@@ -109,12 +114,12 @@ def cache_results(website, query, results):
 
 def save_to_user_history(user_id, website, query, results):
     """Save search results to user's history"""
-    results_json = json.dumps([r.__dict__ for r in results])
+    results_json = json.dumps(results)
     
     history_entry = UserSearchHistory(
         user_id=user_id,
         website=website,
-        query=query,
+        search_query=query,
         results=results_json
     )
     
@@ -126,11 +131,11 @@ def get_detailed_results(basic_results, website):
     Get detailed information for each result including comment summaries
     
     Args:
-        basic_results (list): List of basic SearchResult objects
+        basic_results (list): List of basic search results
         website (str): Website domain
         
     Returns:
-        list: Enhanced SearchResult objects with comments analysis
+        list: Enhanced search results with comments analysis
     """
     # DEVELOPMENT MODE: Skip detailed results in dev to save credits
     if DEV_MODE:
@@ -150,20 +155,10 @@ def get_detailed_results(basic_results, website):
     
     for result in tqdm(basic_results, desc="Analyzing detailed results"):
         try:
-            # Extract prompt to identify the big difference
-            extract_prompt = """
-            Analyze this content and identify:
-            1. Key features and benefits
-            2. What makes this THE ONE (the big difference)
-            3. User experiences and feedback
-            4. Tips and recommendations
-            """
-            
             payload = {
-                "url": result.url,
+                "url": result['url'],
                 "include_comments": True,
                 "summarize_comments": True,
-                "prompt": extract_prompt,  # Custom prompt for extraction
                 # DEVELOPMENT MODE OPTIMIZATIONS - REMOVE IN PRODUCTION
                 "format": "basic" if DEV_MODE else "json",  # Basic format uses fewer credits
                 "max_comments": 3 if DEV_MODE else None,  # Limit comments in dev
@@ -175,40 +170,25 @@ def get_detailed_results(basic_results, website):
             
             data = response.json()
             
+            # Extract comment summaries and organization
             if 'commentSummary' in data:
-                summary = data['commentSummary'].get('summary', '')
-                pros = data['commentSummary'].get('pros', [])
-                cons = data['commentSummary'].get('cons', [])
-                tips = data['commentSummary'].get('tips', [])
-                big_difference = data.get('bigDifference', '')  # Extract the big difference
-                
-                result.summary = summary
-                result.pros = pros
-                result.cons = cons
-                result.tips = tips
-                result.big_difference = big_difference  # Store the big difference
-                
-                # Add key features if available
-                if 'features' in data:
-                    result.key_features = data['features']
+                result['summary'] = data['commentSummary'].get('summary', '')
+                result['pros'] = data['commentSummary'].get('pros', [])
+                result['cons'] = data['commentSummary'].get('cons', [])
+                result['tips'] = data['commentSummary'].get('tips', [])
             
+            # Update rating if available in detailed data
             if 'rating' in data and data['rating']:
-                result.rating = data['rating']
+                result['rating'] = data['rating']
                 
             enhanced_results.append(result)
             
         except requests.exceptions.RequestException as e:
-            current_app.logger.error(f"Error getting details for {result.url}: {str(e)}")
-            enhanced_results.append(result)
+            current_app.logger.error(f"Error getting details for {result['url']}: {str(e)}")
+            enhanced_results.append(result)  # Add the basic result without enhancements
     
-    # Sort by rating and big difference significance
-    enhanced_results.sort(
-        key=lambda x: (
-            x.rating if x.rating else 0,
-            len(x.big_difference) if hasattr(x, 'big_difference') else 0
-        ),
-        reverse=True
-    )
+    # Sort by rating if available
+    enhanced_results.sort(key=lambda x: x.get('rating', 0), reverse=True)
     
     return enhanced_results
 
@@ -217,7 +197,7 @@ def get_best_results(results, ranking_type="relevance"):
     Process and rank search results based on ranking type
     
     Args:
-        results (list): List of SearchResult objects
+        results (list): List of search results
         ranking_type (str): 'relevance' or 'ratings'
         
     Returns:
@@ -232,12 +212,6 @@ def get_best_results(results, ranking_type="relevance"):
     if ranking_type == "relevance":
         return results[:max_results]
     else:
-        # Sort by both rating and big difference significance
-        results.sort(
-            key=lambda x: (
-                x.rating if x.rating else 0,
-                len(x.big_difference) if hasattr(x, 'big_difference') else 0
-            ),
-            reverse=True
-        )
+        # Sort by rating if available
+        results.sort(key=lambda x: x.get('rating', 0), reverse=True)
         return results[:max_results]

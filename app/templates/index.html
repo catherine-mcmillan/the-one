@@ -1,49 +1,5 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="row justify-content-center">
-    <div class="col-md-8">
-        <div class="card">
-            <div class="card-header bg-primary text-white">
-                <h1 class="text-center">The ONE</h1>
-                <p class="text-center mb-0">Find the best of everything</p>
-            </div>
-            <div class="card-body">
-                <form action="{{ url_for('main.search') }}" method="post" class="mb-4">
-                    <div class="mb-3">
-                        <label for="website" class="form-label">Website to search</label>
-                        <input type="text" class="form-control" id="website" name="website"
-                            placeholder="e.g., allrecipes.com, youtube.com, etsy.com" required>
-                        <div class="form-text">Enter the domain name without 'https://' or 'www.'</div>
-                    </div>
-                    <div class="mb-3">
-                        <label for="query" class="form-label">What are you looking for?</label>
-                        <input type="text" class="form-control" id="query" name="query"
-                            placeholder="e.g., chocolate chip cookies, wood crafting tutorials" required>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">Ranking Method</label>
-                        <div class="form-check">
-                            <input class="form-check-input" type="radio" name="ranking_type" id="relevance"
-                                value="relevance" checked>
-                            <label class="form-check-label" for="relevance">
-                                By Relevance
-                            </label>
-                        </div>
-                        <div class="form-check">
-                            <input class="form-check-input" type="radio" name="ranking_type" id="ratings"
-                                value="ratings">
-                            <label class="form-check-label" for="ratings">
-                                By Ratings & Comments Analysis
-                            </label>
-                        </div>
-                    </div>
-                    <div class="d-grid">
-                        <button type="submit" class="btn btn-primary">Find The ONE</button>
-                    </div>
-                </form>
-            </div>
-        </div>
-    </div>
-</div>
+<h1>Welcome to The One</h1>
 {% endblock %}

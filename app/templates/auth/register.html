@@ -10,25 +10,54 @@
                 </div>
                 <div class="card-body">
                     <form method="POST" action="{{ url_for('auth.register') }}">
+                        {{ form.hidden_tag() }}
                         <div class="mb-3">
-                            <label for="username" class="form-label">Username</label>
-                            <input type="text" class="form-control" id="username" name="username" required>
+                            {{ form.username.label(class="form-label") }}
+                            {{ form.username(class="form-control") }}
+                            {% if form.username.errors %}
+                            {% for error in form.username.errors %}
+                            <div class="alert alert-danger">{{ error }}</div>
+                            {% endfor %}
+                            {% endif %}
                         </div>
                         <div class="mb-3">
-                            <label for="email" class="form-label">Email address</label>
-                            <input type="email" class="form-control" id="email" name="email" required>
+                            {{ form.email.label(class="form-label") }}
+                            {{ form.email(class="form-control") }}
+                            {% if form.email.errors %}
+                            {% for error in form.email.errors %}
+                            <div class="alert alert-danger">{{ error }}</div>
+                            {% endfor %}
+                            {% endif %}
                         </div>
                         <div class="mb-3">
-                            <label for="password" class="form-label">Password</label>
-                            <input type="password" class="form-control" id="password" name="password" required>
-                            <div class="form-text">Password must be at least 8 characters long.</div>
+                            {{ form.password.label(class="form-label") }}
+                            {{ form.password(class="form-control") }}
+                            <div class="form-text">
+                                Password must contain:
+                                <ul>
+                                    <li>At least 8 characters</li>
+                                    <li>At least one uppercase letter</li>
+                                    <li>At least one lowercase letter</li>
+                                    <li>At least one number</li>
+                                    <li>At least one special character (!@#$%^&*(),.?":{}|&lt;&gt;)</li>
+                                </ul>
+                            </div>
+                            {% if form.password.errors %}
+                            {% for error in form.password.errors %}
+                            <div class="alert alert-danger">{{ error }}</div>
+                            {% endfor %}
+                            {% endif %}
                         </div>
                         <div class="mb-3">
-                            <label for="confirm_password" class="form-label">Confirm Password</label>
-                            <input type="password" class="form-control" id="confirm_password" name="confirm_password"
-                                required>
+                            {{ form.password2.label(class="form-label") }}
+                            {{ form.password2(class="form-control") }}
+                            {% if form.password2.errors %}
+                            {% for error in form.password2.errors %}
+                            <div class="alert alert-danger">{{ error }}</div>
+                            {% endfor %}
+                            {% endif %}
                         </div>
-                        <button type="submit" class="btn btn-primary">Register</button>
+                        {{ form.submit(class="btn btn-primary") }}
                     </form>
                     <hr>
                     <p>Already have an account? <a href="{{ url_for('auth.login') }}">Login here</a></p>

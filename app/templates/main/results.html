@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row">
+        <div class="col-12">
+            <h1>Search Results</h1>
+            <div class="card mb-4">
+                <div class="card-body">
+                    <h5 class="card-title">Search Details</h5>
+                    <p class="card-text">
+                        <strong>Website:</strong> {{ search_history.website }}<br>
+                        <strong>Query:</strong> {{ search_history.search_query }}<br>
+                        <strong>Ranking Type:</strong> {{ search_history.ranking_type|title }}<br>
+                        <strong>Date:</strong> {{ search_history.created_at.strftime('%Y-%m-%d %H:%M:%S') }}
+                    </p>
+                    <a href="{{ url_for('main.index') }}" class="btn btn-primary">New Search</a>
+                </div>
+            </div>
+
+            {% if results %}
+            <div class="row">
+                {% for result in results %}
+                <div class="col-md-6 col-lg-4 mb-4">
+                    <div class="card h-100">
+                        <div class="card-body">
+                            <h5 class="card-title">{{ result.title }}</h5>
+                            {% if result.rating %}
+                            <div class="mb-2">
+                                <span class="badge bg-primary">Rating: {{ "%.1f"|format(result.rating) }}/5</span>
+                            </div>
+                            {% endif %}
+                            {% if result.description %}
+                            <p class="card-text">{{ result.description }}</p>
+                            {% endif %}
+                            <a href="{{ result.url }}" class="btn btn-primary" target="_blank">View</a>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="alert alert-info">
+                No results found for this search. Try adjusting your search terms.
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}
