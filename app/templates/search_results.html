@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2>Search Results for "{{ query }}" on {{ website }}</h2>
+
+    {% if current_user.is_authenticated %}
+    <form method="POST" action="{{ url_for('main.save_to_history') }}" class="mb-4">
+        <input type="hidden" name="query" value="{{ query }}">
+        <input type="hidden" name="website" value="{{ website }}">
+        <div class="form-check">
+            <input type="checkbox" class="form-check-input" id="saveToHistory" name="save_to_history">
+            <label class="form-check-label" for="saveToHistory">Save this search to my history</label>
+        </div>
+        <div class="form-group mt-2" id="notesField" style="display: none;">
+            <label for="notes">Add notes about this search:</label>
+            <textarea class="form-control" id="notes" name="notes" rows="2"></textarea>
+        </div>
+        <button type="submit" class="btn btn-primary mt-2">Save Search</button>
+    </form>
+    {% endif %}
+
+    <div class="row">
+        {% for result in results %}
+        <div class="col-md-6 mb-4">
+            <div class="card h-100">
+                {% if result.image_url %}
+                <img src="{{ result.image_url }}" class="card-img-top" alt="{{ result.title }}">
+                {% endif %}
+                <div class="card-body">
+                    <h5 class="card-title">{{ result.title }}</h5>
+                    {% if result.rating %}
+                    <div class="mb-2">
+                        <span class="text-warning">★</span> {{ result.rating }}
+                    </div>
+                    {% endif %}
+
+                    {% if result.big_difference %}
+                    <div class="alert alert-info">
+                        <strong>What makes this THE ONE:</strong><br>
+                        {{ result.big_difference }}
+                    </div>
+                    {% endif %}
+
+                    {% if result.pros %}
+                    <h6>Pros:</h6>
+                    <ul class="list-group mb-2">
+                        {% for pro in result.pros %}
+                        <li class="list-group-item">{{ pro }}</li>
+                        {% endfor %}
+                    </ul>
+                    {% endif %}
+
+                    {% if result.cons %}
+                    <h6>Cons:</h6>
+                    <ul class="list-group mb-2">
+                        {% for con in result.cons %}
+                        <li class="list-group-item">{{ con }}</li>
+                        {% endfor %}
+                    </ul>
+                    {% endif %}
+
+                    {% if result.tips %}
+                    <h6>Tips:</h6>
+                    <ul class="list-group mb-2">
+                        {% for tip in result.tips %}
+                        <li class="list-group-item">{{ tip }}</li>
+                        {% endfor %}
+                    </ul>
+                    {% endif %}
+
+                    <a href="{{ result.url }}" class="btn btn-primary" target="_blank">View Details</a>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+{% block scripts %}
+<script>
+    document.getElementById('saveToHistory').addEventListener('change', function () {
+        const notesField = document.getElementById('notesField');
+        notesField.style.display = this.checked ? 'block' : 'none';
+    });
+</script>
+{% endblock %}
+{% endblock %}

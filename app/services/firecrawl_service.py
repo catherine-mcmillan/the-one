@@ -1,14 +1,19 @@
 import requests
 from flask import current_app
-from app.models.search import SearchResult
+from datetime import datetime, timedelta
+import json
 from tqdm import tqdm  # For progress tracking
+from app.models.search import SearchResult
+from app.models.search_history import SearchCache, UserSearchHistory
+from app import db
 
 # DEVELOPMENT MODE SETTINGS - REMOVE IN PRODUCTION
 DEV_MODE = True  # Set to False in production
 MAX_RESULTS_DEV = 2  # Limit results during development (1 credit per page)
 USE_SMALLER_MODEL = True  # Use smaller model for development
+CACHE_DURATION = timedelta(hours=24)  # Cache results for 24 hours
 
-def search_website(website, query, ranking_type="relevance"):
+def search_website(website, query, ranking_type="relevance", save_to_history=False, user_id=None):
     """
     Search for products/content on the specified website using Firecrawl API
     
@@ -16,14 +21,30 @@ def search_website(website, query, ranking_type="relevance"):
         website (str): Website to search (e.g., allrecipes.com)
         query (str): Search query
         ranking_type (str): 'relevance' or 'ratings'
+        save_to_history (bool): Whether to save to user's history
+        user_id (int): User ID if saving to history
         
     Returns:
         list: List of SearchResult objects
     """
+    # Check cache first
+    cache_key = SearchCache.cache_key(website, query)
+    cached_results = SearchCache.query.filter_by(
+        website=website,
+        query=query
+    ).first()
+    
+    if cached_results and not cached_results.is_expired:
+        results = [SearchResult(**r) for r in cached_results.get_results()]
+        current_app.logger.info(f"Serving cached results for {cache_key}")
+        
+        if save_to_history and user_id:
+            save_to_user_history(user_id, website, query, results)
+            
+        return results
+    
     api_key = current_app.config.get('FIRECRAWL_API_KEY')
     base_url = current_app.config.get('FIRECRAWL_BASE_URL')
-    
-    # Construct URL for the search API endpoint
     search_url = f"{base_url}/v1/search"
     
     headers = {
@@ -34,9 +55,8 @@ def search_website(website, query, ranking_type="relevance"):
     payload = {
         "url": f"https://{website}",
         "query": query,
-        # DEVELOPMENT MODE OPTIMIZATIONS - REMOVE IN PRODUCTION
-        "max_results": MAX_RESULTS_DEV if DEV_MODE else 10,  # 1 credit per page
-        "format": "basic" if DEV_MODE else "json"  # Basic format uses fewer credits
+        "max_results": MAX_RESULTS_DEV if DEV_MODE else 10,
+        "format": "basic" if DEV_MODE else "json"
     }
     
     try:
@@ -44,9 +64,8 @@ def search_website(website, query, ranking_type="relevance"):
         response.raise_for_status()
         
         data = response.json()
-        
-        # Process the search results
         results = []
+        
         if 'results' in data:
             for item in tqdm(data['results'], desc="Processing search results"):
                 result = SearchResult(
@@ -57,15 +76,50 @@ def search_website(website, query, ranking_type="relevance"):
                 )
                 results.append(result)
         
-        # DEVELOPMENT MODE: Skip detailed results in dev to save credits
         if ranking_type == "ratings" and results and not DEV_MODE:
             results = get_detailed_results(results, website)
+        
+        # Cache the results
+        cache_results(website, query, results)
+        
+        # Save to user history if requested
+        if save_to_history and user_id:
+            save_to_user_history(user_id, website, query, results)
             
         return results
     
     except requests.exceptions.RequestException as e:
         current_app.logger.error(f"Error calling Firecrawl API: {str(e)}")
         return []
+
+def cache_results(website, query, results):
+    """Cache the search results"""
+    expires_at = datetime.utcnow() + CACHE_DURATION
+    results_json = json.dumps([r.__dict__ for r in results])
+    
+    cache_entry = SearchCache(
+        website=website,
+        query=query,
+        results=results_json,
+        expires_at=expires_at
+    )
+    
+    db.session.add(cache_entry)
+    db.session.commit()
+
+def save_to_user_history(user_id, website, query, results):
+    """Save search results to user's history"""
+    results_json = json.dumps([r.__dict__ for r in results])
+    
+    history_entry = UserSearchHistory(
+        user_id=user_id,
+        website=website,
+        query=query,
+        results=results_json
+    )
+    
+    db.session.add(history_entry)
+    db.session.commit()
 
 def get_detailed_results(basic_results, website):
     """
