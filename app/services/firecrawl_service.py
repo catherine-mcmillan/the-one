@@ -1,4 +1,3 @@
-import requests
 import time
 from flask import current_app
 from datetime import datetime, timedelta
@@ -6,6 +5,9 @@ import json
 from tqdm import tqdm  # For progress tracking
 from app.models import SearchCache, UserSearchHistory, SearchResult
 from app.extensions import db
+from pydantic import BaseModel, Field
+from typing import List, Optional
+from firecrawl import FirecrawlApp
 
 # DEVELOPMENT MODE SETTINGS - REMOVE IN PRODUCTION
 DEV_MODE = True  # Set to False in production
@@ -13,12 +15,27 @@ MAX_RESULTS_DEV = 2  # Limit results during development (1 credit per page)
 USE_SMALLER_MODEL = True  # Use smaller model for development
 CACHE_DURATION = timedelta(hours=24)  # Cache results for 24 hours
 
+class ProductSchema(BaseModel):
+    """Schema for product information"""
+    title: str
+    url: str
+    rating: Optional[float] = None
+    image_url: Optional[str] = None
+    summary: Optional[str] = None
+    pros: Optional[List[str]] = None
+    cons: Optional[List[str]] = None
+    tips: Optional[List[str]] = None
+
+class SearchResultsSchema(BaseModel):
+    """Schema for list of search results"""
+    results: List[ProductSchema] = Field(..., max_items=10)
+
 class FirecrawlAPIManager:
     """Manager for Firecrawl API requests that handles rate limits"""
     
     def __init__(self, api_key):
         self.api_key = api_key
-        self.base_url = "https://api.firecrawl.dev"
+        self.app = FirecrawlApp(api_key=api_key)
         self.daily_requests = 0
         self.daily_reset_time = datetime.now() + timedelta(days=1)
         # Free tier limit is 100 requests per day
@@ -34,10 +51,10 @@ class FirecrawlAPIManager:
             
         if self.daily_requests >= self.daily_limit:
             raise Exception("Daily API request limit reached")
-        
+    
     def search(self, website, query):
         """
-        Perform a search request to Firecrawl
+        Perform a search request to Firecrawl using the extraction endpoint
         
         Args:
             website (str): Website domain to search
@@ -48,76 +65,67 @@ class FirecrawlAPIManager:
         """
         self._check_rate_limit()
         
-        url = f"{self.base_url}/v1/search"
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json"
-        }
-        
-        payload = {
-            "url": f"https://{website}",
-            "query": query
-        }
+        # First, navigate to the search page and perform the search
+        search_actions = [
+            {"type": "wait", "milliseconds": 2000},
+            {"type": "click", "selector": "input[type='search']"},
+            {"type": "wait", "milliseconds": 1000},
+            {"type": "write", "text": query},
+            {"type": "wait", "milliseconds": 1000},
+            {"type": "press", "key": "ENTER"},
+            {"type": "wait", "milliseconds": 3000},
+            {"type": "scrape"}
+        ]
         
         try:
-            response = requests.post(url, headers=headers, json=payload)
-            response.raise_for_status()
+            data = self.app.extract(
+                [f"https://{website}"],
+                {
+                    "prompt": f"Extract search results for {query} from the page, including title, URL, rating, and any available product information",
+                    "schema": SearchResultsSchema.model_json_schema(),
+                    "actions": search_actions
+                }
+            )
             self.daily_requests += 1
-            return response.json()
-        except requests.exceptions.HTTPError as e:
-            if e.response.status_code == 429:
-                # Rate limit exceeded
-                current_app.logger.error("Firecrawl rate limit exceeded")
-                return {"error": "Rate limit exceeded"}
-            elif e.response.status_code == 401:
-                current_app.logger.error("Invalid Firecrawl API key")
-                return {"error": "Authentication failed"}
-            else:
-                current_app.logger.error(f"Firecrawl API error: {str(e)}")
-                return {"error": str(e)}
+            return data
+        except Exception as e:
+            current_app.logger.error(f"Firecrawl API error: {str(e)}")
+            return {"error": str(e)}
     
-    def extract(self, url, include_comments=True, summarize_comments=True):
+    def extract(self, url):
         """
-        Extract content and comments from a specific URL
+        Extract detailed information from a specific URL
         
         Args:
             url (str): Specific URL to extract content from
-            include_comments (bool): Whether to include comments
-            summarize_comments (bool): Whether to summarize comments
             
         Returns:
             dict: API response
         """
         self._check_rate_limit()
         
-        extract_url = f"{self.base_url}/v1/extract"
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json"
-        }
-        
-        payload = {
-            "url": url,
-            "include_comments": include_comments,
-            "summarize_comments": summarize_comments
-        }
+        # Add actions to ensure we're on the product page and content is loaded
+        extract_actions = [
+            {"type": "wait", "milliseconds": 2000},
+            {"type": "scroll", "selector": "body", "amount": "full"},
+            {"type": "wait", "milliseconds": 1000},
+            {"type": "scrape"}
+        ]
         
         try:
-            response = requests.post(extract_url, headers=headers, json=payload)
-            response.raise_for_status()
+            data = self.app.extract(
+                [url],
+                {
+                    "prompt": "Extract detailed product information including title, rating, pros, cons, and tips from user reviews",
+                    "schema": ProductSchema.model_json_schema(),
+                    "actions": extract_actions
+                }
+            )
             self.daily_requests += 1
-            return response.json()
-        except requests.exceptions.HTTPError as e:
-            if e.response.status_code == 429:
-                # Rate limit exceeded
-                current_app.logger.error("Firecrawl rate limit exceeded")
-                return {"error": "Rate limit exceeded"}
-            elif e.response.status_code == 401:
-                current_app.logger.error("Invalid Firecrawl API key")
-                return {"error": "Authentication failed"}
-            else:
-                current_app.logger.error(f"Firecrawl API error: {str(e)}")
-                return {"error": str(e)}
+            return data
+        except Exception as e:
+            current_app.logger.error(f"Firecrawl API error: {str(e)}")
+            return {"error": str(e)}
 
 def search_website(website, query, ranking_type="relevance", save_to_history=False, user_id=None):
     """
@@ -153,7 +161,7 @@ def search_website(website, query, ranking_type="relevance", save_to_history=Fal
     api_manager = FirecrawlAPIManager(api_key)
     
     try:
-        # First do a search to get basic results
+        # Use the extraction endpoint for search
         search_data = api_manager.search(website, query)
         
         if "error" in search_data:
@@ -162,49 +170,19 @@ def search_website(website, query, ranking_type="relevance", save_to_history=Fal
         
         # Process the search results
         results = []
-        if 'results' in search_data:
-            for item in tqdm(search_data['results'], desc="Processing search results"):
+        if 'data' in search_data and 'json' in search_data['data']:
+            for item in tqdm(search_data['data']['json']['results'], desc="Processing search results"):
                 result = SearchResult(
                     title=item.get('title', 'No Title'),
                     url=item.get('url', ''),
                     rating=item.get('rating'),
-                    image_url=item.get('imageUrl')
+                    image_url=item.get('image_url'),
+                    summary=item.get('summary'),
+                    pros=item.get('pros', []),
+                    cons=item.get('cons', []),
+                    tips=item.get('tips', [])
                 )
                 results.append(result)
-        
-        # If ratings-based ranking is requested and we have results,
-        # get detailed information including comments
-        if ranking_type == "ratings" and results:
-            # Limit to top 5 results for extract API calls to stay within free tier
-            detailed_results = []
-            for result in tqdm(results[:5], desc="Getting detailed results"):
-                extract_data = api_manager.extract(
-                    result.url, 
-                    include_comments=True,
-                    summarize_comments=True
-                )
-                
-                if "error" in extract_data:
-                    current_app.logger.error(f"Extract error: {extract_data['error']}")
-                    detailed_results.append(result)
-                    continue
-                
-                # Extract comment summaries if available
-                if 'commentSummary' in extract_data:
-                    result.summary = extract_data['commentSummary'].get('summary', '')
-                    result.pros = extract_data['commentSummary'].get('pros', [])
-                    result.cons = extract_data['commentSummary'].get('cons', [])
-                    result.tips = extract_data['commentSummary'].get('tips', [])
-                
-                # Update rating if available
-                if 'rating' in extract_data and extract_data['rating']:
-                    result.rating = extract_data['rating']
-                
-                detailed_results.append(result)
-            
-            # Sort by rating
-            detailed_results.sort(key=lambda x: x.rating if x.rating else 0, reverse=True)
-            return detailed_results
         
         # Cache the results
         cache_results(website, query, results)

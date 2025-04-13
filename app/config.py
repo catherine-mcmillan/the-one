@@ -27,7 +27,8 @@ class Config:
     PERMANENT_SESSION_LIFETIME = timedelta(days=1)
     
     # Database settings
-    SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL') or 'sqlite:///app.db'
+    SQLITE_DB = os.environ.get('SQLITE_DB') or 'app.db'
+    SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL') or f'sqlite:///{SQLITE_DB}'
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     
     # Logging
