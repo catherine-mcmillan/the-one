@@ -1,9 +1,9 @@
-flask==3.1.0
+flask==3.0.2
 flask-wtf==1.2.2
 gunicorn==23.0.0
 pydantic==2.11.3
 pytest==8.3.5
-python-dotenv==1.1.0
+python-dotenv==1.0.1
 requests==2.32.3
 tqdm==4.67.1
 email-validator==2.1.0
@@ -11,3 +11,4 @@ Pillow==10.2.0
 flask-sqlalchemy==3.1.1
 flask-login==0.6.3
 Flask-Migrate==4.0.5
+flask-caching==2.1.0

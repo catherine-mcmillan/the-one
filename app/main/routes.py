@@ -1,17 +1,17 @@
-from flask import render_template, redirect, url_for, flash, request, jsonify
+from flask import Blueprint, render_template, request, jsonify, current_app, flash, redirect, url_for, session
 from flask_login import login_required, current_user
 from app.main import bp
 from app.models import UserSearchHistory, SearchResult
 from app.extensions import db
-from app.services.firecrawl_service import search_website, get_best_results
+from app.services.firecrawl_service import search_website, get_best_results, FirecrawlAPIManager
 from tqdm import tqdm
 from datetime import datetime
 import json
+import uuid
 
-@bp.route('/')
-@bp.route('/index')
+@bp.route('/', methods=['GET'])
 def index():
-    return render_template('main/index.html')
+    return render_template('main/index.html', title='The ONE - Find the Best of Everything')
 
 @bp.route('/search', methods=['POST'])
 @login_required
@@ -21,79 +21,46 @@ def search():
     ranking_type = request.form.get('ranking_type', 'relevance')
     
     if not website or not query:
-        flash('Please provide both website and search query', 'error')
+        flash('Please provide both a website and a search query', 'error')
         return redirect(url_for('main.index'))
     
-    # Clean website input (remove https://, www., etc.)
-    website = website.lower()
-    if website.startswith('http://'):
-        website = website[7:]
-    if website.startswith('https://'):
-        website = website[8:]
-    if website.startswith('www.'):
-        website = website[4:]
+    # Store search history
+    search_history = UserSearchHistory(
+        user_id=current_user.id,
+        website=website,
+        search_query=query,
+        ranking_type=ranking_type,
+        created_at=datetime.utcnow()
+    )
+    db.session.add(search_history)
+    db.session.commit()
     
-    try:
-        # Store the search in history
-        search_history = UserSearchHistory(
-            user_id=current_user.id,
-            website=website,
-            search_query=query,
-            ranking_type=ranking_type,
-            created_at=datetime.utcnow()
-        )
-        db.session.add(search_history)
-        db.session.commit()
-        
-        # Perform the search using Firecrawl API with development mode optimizations
-        with tqdm(total=1, desc="Processing search") as pbar:
-            results = search_website(
-                website=website,
-                query=query,
-                ranking_type=ranking_type,
-                save_to_history=True,
-                user_id=current_user.id
-            )
-            pbar.update(1)
-        
-        # Store results in the database
-        for result in results:
-            search_result = SearchResult(
-                search_id=search_history.id,
-                title=result.get('title', ''),
-                url=result.get('url', ''),
-                description=result.get('summary', ''),
-                rating=result.get('rating')
-            )
-            db.session.add(search_result)
-        
-        db.session.commit()
-        
-        flash('Search completed successfully!', 'success')
-        return redirect(url_for('main.results', search_id=search_history.id))
-        
-    except Exception as e:
-        db.session.rollback()
-        flash(f'An error occurred during the search: {str(e)}', 'error')
-        return redirect(url_for('main.index'))
+    # Perform the search
+    results = search_website(website, query, ranking_type)
+    
+    return render_template('main/results.html', 
+                         results=results,
+                         website=website,
+                         query=query,
+                         ranking_type=ranking_type)
 
-@bp.route('/results/<int:search_id>')
+@bp.route('/results/<search_id>')
 @login_required
 def results(search_id):
-    search_history = UserSearchHistory.query.get_or_404(search_id)
+    search_data = session.get(f'search_{search_id}')
     
-    # Verify the search belongs to the current user
-    if search_history.user_id != current_user.id:
-        flash('You do not have permission to view these results.', 'error')
+    if not search_data:
+        flash('Search results not found or expired. Please try a new search.', 'warning')
         return redirect(url_for('main.index'))
     
-    # Get the search results
-    results = SearchResult.query.filter_by(search_id=search_id).all()
-    
-    return render_template('main/results.html',
-                         title='Search Results',
-                         search_history=search_history,
-                         results=results)
+    return render_template(
+        'main/results.html',
+        title='Search Results',
+        website=search_data['website'],
+        query=search_data['query'],
+        ranking_type=search_data['ranking_type'],
+        results=search_data['results']
+    )
 
 @bp.route('/search_history')
 @login_required
@@ -108,4 +75,64 @@ def search_history():
     
     return render_template('main/search_history.html', 
                          search_history=search_history,
-                         title='Search History') 
+                         title='Search History')
+
+@bp.route('/api-usage', methods=['GET'])
+@login_required
+def api_usage():
+    """Display API usage statistics"""
+    if not current_user.is_admin:
+        flash('Access denied', 'danger')
+        return redirect(url_for('main.index'))
+    
+    # Get the API manager and usage stats
+    api_manager = FirecrawlAPIManager(current_app.config.get('FIRECRAWL_API_KEY'))
+    
+    # Get usage history from database
+    usage_history = UserSearchHistory.query.order_by(UserSearchHistory.created_at.desc()).limit(30).all()
+    
+    # Format for chart display
+    dates = [entry.created_at.strftime('%Y-%m-%d') for entry in usage_history]
+    counts = [entry.count() for entry in usage_history]
+    
+    return render_template(
+        'admin/api_usage.html',
+        title='API Usage Dashboard',
+        daily_requests=api_manager.daily_requests,
+        daily_limit=api_manager.daily_limit,
+        percentage_used=(api_manager.daily_requests / api_manager.daily_limit) * 100,
+        reset_time=api_manager.daily_reset_time.strftime('%Y-%m-%d %H:%M:%S'),
+        history_dates=dates,
+        history_counts=counts
+    )
+
+@bp.route('/api-error/rate-limit')
+def api_rate_limit_error():
+    """Display the API rate limit error page"""
+    api_manager = FirecrawlAPIManager(current_app.config.get('FIRECRAWL_API_KEY'))
+    return render_template(
+        'errors/api_limit.html',
+        title='API Limit Reached',
+        reset_time=api_manager.daily_reset_time.strftime('%Y-%m-%d %H:%M:%S')
+    )
+
+@bp.route('/api-error')
+def api_error():
+    """Display a generic API error page"""
+    error_message = request.args.get('message', 'Unknown API error')
+    return render_template(
+        'errors/api_error.html',
+        title='API Error',
+        error_message=error_message
+    )
+
+def clean_website_input(website):
+    """Clean website input by removing protocol and www"""
+    website = website.lower()
+    if website.startswith('http://'):
+        website = website[7:]
+    if website.startswith('https://'):
+        website = website[8:]
+    if website.startswith('www.'):
+        website = website[4:]
+    return website 

@@ -5,6 +5,7 @@ from app.models.user import User
 from app import db
 from datetime import datetime, timedelta
 from functools import wraps
+from werkzeug.security import check_password_hash
 
 bp = Blueprint('auth', __name__)
 csrf = CSRFProtect()
@@ -80,52 +81,32 @@ def register():
 def login():
     if current_user.is_authenticated:
         return redirect(url_for('main.index'))
-        
+    
     if request.method == 'POST':
-        username = request.form.get('username')
+        email = request.form.get('email')
         password = request.form.get('password')
-        remember = request.form.get('remember', False)
+        remember = True if request.form.get('remember') else False
         
-        if not username or not password:
-            flash('Please provide both username and password.', 'error')
-            return redirect(url_for('auth.login'))
-            
-        user = User.query.filter_by(username=username).first()
+        user = User.query.filter_by(email=email).first()
         
-        # Check for account lockout
-        if user and user.is_locked_out:
-            flash('Account is temporarily locked due to too many failed attempts. Please try again later.', 'error')
+        if not user or not check_password_hash(user.password, password):
+            flash('Invalid email or password', 'error')
             return redirect(url_for('auth.login'))
-            
-        if user is None or not user.check_password(password):
-            if user:
-                user.record_failed_login()
-            flash('Invalid username or password.', 'error')
+        
+        if not user.is_active:
+            flash('Your account is not active. Please contact support.', 'error')
             return redirect(url_for('auth.login'))
-            
-        # Set secure session settings
-        session.permanent = True
-        session.permanent_session_lifetime = timedelta(days=30 if remember else 1)
         
         login_user(user, remember=remember)
-        user.update_last_login()
-        
-        next_page = request.args.get('next')
-        if not next_page or not next_page.startswith('/'):
-            next_page = url_for('main.index')
-            
-        flash('Welcome back!', 'success')
-        return redirect(next_page)
-        
+        return redirect(url_for('main.index'))
+    
     return render_template('auth/login.html')
 
 @bp.route('/logout')
 @login_required
 def logout():
-    session.clear()
     logout_user()
-    flash('You have been logged out.', 'info')
-    return redirect(url_for('main.index'))
+    return redirect(url_for('auth.login'))
 
 @bp.route('/profile')
 @login_required

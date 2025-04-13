@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container text-center mt-5">
+    <h1 class="display-1 text-muted">404</h1>
+    <h2 class="mb-4">Page Not Found</h2>
+    <p class="lead mb-4">The page you're looking for doesn't exist.</p>
+    <div class="d-flex justify-content-center gap-3">
+        <a href="{{ url_for('main.index') }}" class="btn btn-primary">Go to Homepage</a>
+        <button onclick="history.back()" class="btn btn-outline-secondary">Go Back</button>
+    </div>
+</div>
+{% endblock %}

@@ -1,7 +1,7 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash
 from flask_login import current_user, login_required
 from app.services.firecrawl_service import search_website
-from app.models.search_history import UserSearchHistory
+from app.models.search import UserSearchHistory
 from app import db
 
 bp = Blueprint('main', __name__)

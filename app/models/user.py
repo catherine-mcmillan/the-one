@@ -4,10 +4,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from flask_login import UserMixin
 import re
 from email_validator import validate_email, EmailNotValidError
-
-@login_manager.user_loader
-def load_user(id):
-    return User.query.get(int(id))
+from app.models.search import UserSearchHistory
 
 class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -18,8 +15,9 @@ class User(UserMixin, db.Model):
     last_login = db.Column(db.DateTime)
     failed_login_attempts = db.Column(db.Integer, default=0)
     last_failed_login = db.Column(db.DateTime)
+    is_admin = db.Column(db.Boolean, default=False)
     
-    # Relationship with search history using string reference
+    # Relationship with search history
     search_history = db.relationship('UserSearchHistory', backref='user', lazy='dynamic')
     
     def __repr__(self):
@@ -60,9 +58,16 @@ class User(UserMixin, db.Model):
     
     def set_password(self, password):
         """Set password with validation"""
-        is_valid, message = self.validate_password(password)
-        if not is_valid:
-            raise ValueError(message)
+        if len(password) < 8:
+            raise ValueError('Password must be at least 8 characters long')
+        if not any(c.isupper() for c in password):
+            raise ValueError('Password must contain at least one uppercase letter')
+        if not any(c.islower() for c in password):
+            raise ValueError('Password must contain at least one lowercase letter')
+        if not any(c.isdigit() for c in password):
+            raise ValueError('Password must contain at least one number')
+        if not any(c in '!@#$%^&*()_+-=[]{}|;:,.<>?' for c in password):
+            raise ValueError('Password must contain at least one special character')
         self.password_hash = generate_password_hash(password)
     
     def check_password(self, password):

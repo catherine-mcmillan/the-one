@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-4">
+    <h1>Firecrawl API Usage Dashboard</h1>
+
+    <div class="row">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h5>Today's Usage</h5>
+                </div>
+                <div class="card-body">
+                    <div class="progress mb-3">
+                        <div class="progress-bar {% if percentage_used > 90 %}bg-danger{% elif percentage_used > 70 %}bg-warning{% else %}bg-success{% endif %}"
+                            role="progressbar" style="width: {{ percentage_used }}%;"
+                            aria-valuenow="{{ daily_requests }}" aria-valuemin="0" aria-valuemax="{{ daily_limit }}">
+                            {{ daily_requests }} / {{ daily_limit }}
+                        </div>
+                    </div>
+                    <p><strong>Requests Today:</strong> {{ daily_requests }} of {{ daily_limit }} ({{
+                        percentage_used|round(1) }}%)</p>
+                    <p><strong>Limit Resets:</strong> {{ reset_time }}</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h5>Usage Tips</h5>
+                </div>
+                <div class="card-body">
+                    <ul>
+                        <li>Free tier limited to {{ daily_limit }} requests per day</li>
+                        <li>Use caching to minimize API calls</li>
+                        <li>Extract API costs 1 request credit per URL</li>
+                        <li>Search API also costs 1 request credit</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row mt-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5>30-Day Usage History</h5>
+                </div>
+                <div class="card-body">
+                    <canvas id="usageChart" width="400" height="200"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        var ctx = document.getElementById('usageChart').getContext('2d');
+        var usageChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: {{ history_dates| tojson }},
+        datasets: [{
+            label: 'API Requests',
+            data: {{ history_counts| tojson }},
+        backgroundColor: 'rgba(54, 162, 235, 0.2)',
+        borderColor: 'rgba(54, 162, 235, 1)',
+        borderWidth: 1
+            }]
+        },
+        options: {
+        scales: {
+            y: {
+                beginAtZero: true,
+                suggestedMax: {{ daily_limit }}
+                }
+            }
+        }
+    });
+});
+</script>
+{% endblock %}

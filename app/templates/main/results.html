@@ -1,49 +1,104 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="container mt-4">
-    <div class="row">
-        <div class="col-12">
-            <h1>Search Results</h1>
-            <div class="card mb-4">
-                <div class="card-body">
-                    <h5 class="card-title">Search Details</h5>
-                    <p class="card-text">
-                        <strong>Website:</strong> {{ search_history.website }}<br>
-                        <strong>Query:</strong> {{ search_history.search_query }}<br>
-                        <strong>Ranking Type:</strong> {{ search_history.ranking_type|title }}<br>
-                        <strong>Date:</strong> {{ search_history.created_at.strftime('%Y-%m-%d %H:%M:%S') }}
-                    </p>
-                    <a href="{{ url_for('main.index') }}" class="btn btn-primary">New Search</a>
-                </div>
-            </div>
+<div class="container mt-5">
+    <h1>Search Results</h1>
+    <p class="lead">Showing results for "{{ query }}" on {{ website }}</p>
 
+    <div class="row">
+        <div class="col-md-8">
             {% if results %}
-            <div class="row">
-                {% for result in results %}
-                <div class="col-md-6 col-lg-4 mb-4">
-                    <div class="card h-100">
-                        <div class="card-body">
-                            <h5 class="card-title">{{ result.title }}</h5>
-                            {% if result.rating %}
-                            <div class="mb-2">
-                                <span class="badge bg-primary">Rating: {{ "%.1f"|format(result.rating) }}/5</span>
-                            </div>
-                            {% endif %}
-                            {% if result.description %}
-                            <p class="card-text">{{ result.description }}</p>
-                            {% endif %}
-                            <a href="{{ result.url }}" class="btn btn-primary" target="_blank">View</a>
-                        </div>
+            {% for result in results %}
+            <div class="card mb-3">
+                <div class="card-body">
+                    <h5 class="card-title">{{ result.title }}</h5>
+
+                    {% if result.rating %}
+                    <div class="mb-2">
+                        <span class="badge bg-success">{{ result.rating }} / 5</span>
                     </div>
+                    {% endif %}
+
+                    {% if result.content %}
+                    <p class="card-text">{{ result.content }}</p>
+                    {% endif %}
+
+                    <a href="{{ result.url }}" class="btn btn-primary" target="_blank">View Recipe</a>
+
+                    {% if result.commentSummary %}
+                    <div class="mt-3">
+                        {% if result.commentSummary.summary %}
+                        <h6>Summary:</h6>
+                        <p>{{ result.commentSummary.summary }}</p>
+                        {% endif %}
+
+                        {% if result.commentSummary.pros %}
+                        <h6>Pros:</h6>
+                        <ul>
+                            {% for pro in result.commentSummary.pros %}
+                            <li>{{ pro }}</li>
+                            {% endfor %}
+                        </ul>
+                        {% endif %}
+
+                        {% if result.commentSummary.cons %}
+                        <h6>Cons:</h6>
+                        <ul>
+                            {% for con in result.commentSummary.cons %}
+                            <li>{{ con }}</li>
+                            {% endfor %}
+                        </ul>
+                        {% endif %}
+
+                        {% if result.commentSummary.tips %}
+                        <h6>Tips:</h6>
+                        <ul>
+                            {% for tip in result.commentSummary.tips %}
+                            <li>{{ tip }}</li>
+                            {% endfor %}
+                        </ul>
+                        {% endif %}
+                    </div>
+                    {% endif %}
                 </div>
-                {% endfor %}
             </div>
+            {% endfor %}
             {% else %}
             <div class="alert alert-info">
-                No results found for this search. Try adjusting your search terms.
+                No results found for your search. Try adjusting your search terms.
             </div>
             {% endif %}
+        </div>
+
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">Search Again</h5>
+                    <form action="{{ url_for('main.search') }}" method="POST">
+                        <div class="mb-3">
+                            <label for="website" class="form-label">Website</label>
+                            <input type="text" class="form-control" id="website" name="website" value="{{ website }}"
+                                required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="query" class="form-label">Search Query</label>
+                            <input type="text" class="form-control" id="query" name="query" value="{{ query }}"
+                                required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="ranking_type" class="form-label">Ranking Type</label>
+                            <select class="form-select" id="ranking_type" name="ranking_type">
+                                <option value="relevance" {% if ranking_type=='relevance' %}selected{% endif %}>
+                                    Relevance</option>
+                                <option value="popularity" {% if ranking_type=='popularity' %}selected{% endif %}>
+                                    Popularity</option>
+                                <option value="date" {% if ranking_type=='date' %}selected{% endif %}>Date</option>
+                            </select>
+                        </div>
+                        <button type="submit" class="btn btn-primary">Search</button>
+                    </form>
+                </div>
+            </div>
         </div>
     </div>
 </div>

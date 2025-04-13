@@ -2,87 +2,149 @@
 
 {% block content %}
 <div class="container mt-4">
-    <h2>Search Results for "{{ query }}" on {{ website }}</h2>
+    <h1 class="mb-4">Search Results</h1>
+    <p class="lead">Results for "{{ query }}" on {{ website }}</p>
 
-    {% if current_user.is_authenticated %}
-    <form method="POST" action="{{ url_for('main.save_to_history') }}" class="mb-4">
-        <input type="hidden" name="query" value="{{ query }}">
-        <input type="hidden" name="website" value="{{ website }}">
-        <div class="form-check">
-            <input type="checkbox" class="form-check-input" id="saveToHistory" name="save_to_history">
-            <label class="form-check-label" for="saveToHistory">Save this search to my history</label>
-        </div>
-        <div class="form-group mt-2" id="notesField" style="display: none;">
-            <label for="notes">Add notes about this search:</label>
-            <textarea class="form-control" id="notes" name="notes" rows="2"></textarea>
-        </div>
-        <button type="submit" class="btn btn-primary mt-2">Save Search</button>
-    </form>
-    {% endif %}
+    <div class="mb-4">
+        <a href="{{ url_for('main.index') }}" class="btn btn-outline-primary">New Search</a>
 
+        {% if current_user.is_authenticated %}
+        <button type="button" class="btn btn-outline-success ms-2" data-bs-toggle="modal" data-bs-target="#saveModal">
+            Save to History
+        </button>
+        {% endif %}
+    </div>
+
+    {% if results %}
     <div class="row">
         {% for result in results %}
-        <div class="col-md-6 mb-4">
+        <div class="col-md-6 col-lg-4 mb-4">
             <div class="card h-100">
                 {% if result.image_url %}
-                <img src="{{ result.image_url }}" class="card-img-top" alt="{{ result.title }}">
+                <div class="card-img-container">
+                    <img src="{{ result.image_url }}" class="card-img-top" alt="{{ result.title }}">
+                </div>
                 {% endif %}
+
                 <div class="card-body">
                     <h5 class="card-title">{{ result.title }}</h5>
+
                     {% if result.rating %}
                     <div class="mb-2">
-                        <span class="text-warning">★</span> {{ result.rating }}
+                        <span class="badge bg-success">{{ result.rating }} / 5</span>
                     </div>
                     {% endif %}
 
-                    {% if result.big_difference %}
-                    <div class="alert alert-info">
-                        <strong>What makes this THE ONE:</strong><br>
-                        {{ result.big_difference }}
-                    </div>
-                    {% endif %}
-
-                    {% if result.pros %}
-                    <h6>Pros:</h6>
-                    <ul class="list-group mb-2">
-                        {% for pro in result.pros %}
-                        <li class="list-group-item">{{ pro }}</li>
-                        {% endfor %}
-                    </ul>
-                    {% endif %}
-
-                    {% if result.cons %}
-                    <h6>Cons:</h6>
-                    <ul class="list-group mb-2">
-                        {% for con in result.cons %}
-                        <li class="list-group-item">{{ con }}</li>
-                        {% endfor %}
-                    </ul>
-                    {% endif %}
-
-                    {% if result.tips %}
-                    <h6>Tips:</h6>
-                    <ul class="list-group mb-2">
-                        {% for tip in result.tips %}
-                        <li class="list-group-item">{{ tip }}</li>
-                        {% endfor %}
-                    </ul>
-                    {% endif %}
-
-                    <a href="{{ result.url }}" class="btn btn-primary" target="_blank">View Details</a>
+                    <a href="{{ result.url }}" class="btn btn-primary" target="_blank">View Original</a>
                 </div>
+
+                {% if result.summary or result.pros or result.cons or result.tips %}
+                <div class="card-footer bg-light">
+                    <div class="comment-summary">
+                        {% if result.summary %}
+                        <h6 class="fw-bold">User Feedback Summary:</h6>
+                        <p class="small">{{ result.summary }}</p>
+                        {% endif %}
+
+                        {% if result.pros %}
+                        <h6 class="text-success mt-3"><i class="fas fa-thumbs-up"></i> Pros:</h6>
+                        <ul class="small pros-list">
+                            {% for pro in result.pros %}
+                            <li>{{ pro }}</li>
+                            {% endfor %}
+                        </ul>
+                        {% endif %}
+
+                        {% if result.cons %}
+                        <h6 class="text-danger mt-3"><i class="fas fa-thumbs-down"></i> Cons:</h6>
+                        <ul class="small cons-list">
+                            {% for con in result.cons %}
+                            <li>{{ con }}</li>
+                            {% endfor %}
+                        </ul>
+                        {% endif %}
+
+                        {% if result.tips %}
+                        <h6 class="text-info mt-3"><i class="fas fa-lightbulb"></i> Tips:</h6>
+                        <ul class="small tips-list">
+                            {% for tip in result.tips %}
+                            <li>{{ tip }}</li>
+                            {% endfor %}
+                        </ul>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endif %}
             </div>
         </div>
         {% endfor %}
     </div>
+    {% else %}
+    <div class="alert alert-info">
+        <h4 class="alert-heading">No results found!</h4>
+        <p>We couldn't find any results matching your search. Please try a different search term or website.</p>
+    </div>
+    {% endif %}
 </div>
 
-{% block scripts %}
-<script>
-    document.getElementById('saveToHistory').addEventListener('change', function () {
-        const notesField = document.getElementById('notesField');
-        notesField.style.display = this.checked ? 'block' : 'none';
-    });
-</script>
-{% endblock %}
+{% if current_user.is_authenticated %}
+<!-- Save to History Modal -->
+<div class="modal fade" id="saveModal" tabindex="-1" aria-labelledby="saveModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="saveModalLabel">Save Search to History</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form action="{{ url_for('main.save_to_history') }}" method="POST">
+                <div class="modal-body">
+                    <input type="hidden" name="website" value="{{ website }}">
+                    <input type="hidden" name="query" value="{{ query }}">
+                    <div class="mb-3">
+                        <label for="notes" class="form-label">Notes (optional)</label>
+                        <textarea class="form-control" id="notes" name="notes" rows="3"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Add Font Awesome for icons -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css">
+
+<style>
+    .card-img-container {
+        height: 180px;
+        overflow: hidden;
+    }
+
+    .card-img-top {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+
+    .pros-list li {
+        color: #198754;
+    }
+
+    .cons-list li {
+        color: #dc3545;
+    }
+
+    .tips-list li {
+        color: #0dcaf0;
+    }
+
+    .comment-summary {
+        max-height: 350px;
+        overflow-y: auto;
+    }
+</style>
 {% endblock %}

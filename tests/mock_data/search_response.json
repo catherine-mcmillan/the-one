@@ -1,0 +1,73 @@
+{
+    "results": [
+        {
+            "title": "Best Chocolate Chip Cookies",
+            "url": "https://allrecipes.com/recipe/10813/best-chocolate-chip-cookies/",
+            "rating": 4.7,
+            "imageUrl": "https://www.allrecipes.com/img/recipe10813.jpg",
+            "commentSummary": {
+                "summary": "Users love these cookies for their perfect texture and rich flavor. Many recommend using high-quality chocolate chips.",
+                "pros": [
+                    "Quick and easy to make",
+                    "Perfect texture - crispy outside, chewy inside",
+                    "Rich chocolate flavor"
+                ],
+                "cons": [
+                    "Some found them too sweet",
+                    "Require careful timing to avoid overbaking"
+                ],
+                "tips": [
+                    "Add 1/4 teaspoon of espresso powder to enhance chocolate flavor",
+                    "Chill the dough for at least 1 hour before baking",
+                    "Use a mix of chocolate chips and chunks for texture variation"
+                ]
+            }
+        },
+        {
+            "title": "Award-Winning Soft Chocolate Chip Cookies",
+            "url": "https://allrecipes.com/recipe/25037/award-winning-soft-chocolate-chip-cookies/",
+            "rating": 4.5,
+            "imageUrl": "https://www.allrecipes.com/img/recipe25037.jpg",
+            "commentSummary": {
+                "summary": "These soft and chewy cookies are a crowd favorite, with many users praising their perfect texture and balanced sweetness.",
+                "pros": [
+                    "Stays soft for days",
+                    "Perfect for those who prefer chewy cookies",
+                    "Great for making cookie sandwiches"
+                ],
+                "cons": [
+                    "May spread too much if dough isn't chilled",
+                    "Some found them too soft"
+                ],
+                "tips": [
+                    "Use room temperature butter for best results",
+                    "Add a pinch of cinnamon for extra flavor",
+                    "Store in an airtight container with a slice of bread to maintain softness"
+                ]
+            }
+        },
+        {
+            "title": "Chewy Chocolate Chip Cookies",
+            "url": "https://allrecipes.com/recipe/11032/chewy-chocolate-chip-cookies/",
+            "rating": 4.6,
+            "imageUrl": "https://www.allrecipes.com/img/recipe11032.jpg",
+            "commentSummary": {
+                "summary": "A classic chewy chocolate chip cookie recipe that consistently delivers great results.",
+                "pros": [
+                    "Consistent results",
+                    "Great chewy texture",
+                    "Simple ingredients"
+                ],
+                "cons": [
+                    "May be too chewy for some",
+                    "Requires precise measuring"
+                ],
+                "tips": [
+                    "Use bread flour for extra chewiness",
+                    "Don't overmix the dough",
+                    "Let cookies cool on the baking sheet for 5 minutes before transferring"
+                ]
+            }
+        }
+    ]
+}

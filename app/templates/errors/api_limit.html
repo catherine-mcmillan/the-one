@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header bg-warning text-dark">
+                    <h1 class="text-center">API Request Limit Reached</h1>
+                </div>
+                <div class="card-body text-center">
+                    <div class="mb-4">
+                        <i class="fas fa-exclamation-triangle fa-4x text-warning"></i>
+                    </div>
+                    <p class="lead">We've reached our daily limit for API requests.</p>
+                    <p>As we're using the Firecrawl free tier with a limit of 100 requests per day, we can't process any
+                        more searches until the limit resets.</p>
+                    <hr>
+                    <p><strong>The limit will reset at:</strong> {{ reset_time }}</p>
+                    <a href="{{ url_for('main.index') }}" class="btn btn-primary mt-3">Go to Homepage</a>
+                    {% if current_user.is_admin %}
+                    <a href="{{ url_for('main.api_usage') }}" class="btn btn-outline-secondary mt-3 ms-2">View API
+                        Usage</a>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

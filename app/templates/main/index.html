@@ -1,9 +1,11 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="container mt-4">
+<div class="container mt-5">
     <div class="row justify-content-center">
         <div class="col-md-8">
+            <h1 class="text-center mb-4">Welcome to The One</h1>
+            <p class="text-center mb-4">Find the best of everything</p>
             <div class="card">
                 <div class="card-header bg-primary text-white">
                     <h1 class="text-center mb-0">The ONE</h1>
@@ -38,17 +40,10 @@
                                     By Ratings & Comments Analysis
                                 </label>
                             </div>
-                            <div class="form-text">
-                                <ul class="mb-0">
-                                    <li><strong>By Relevance:</strong> Results sorted by search relevance</li>
-                                    <li><strong>By Ratings & Comments:</strong> Results sorted by ratings with summaries
-                                        of user feedback</li>
-                                </ul>
-                            </div>
                         </div>
                         <div class="d-grid">
                             <button type="submit" class="btn btn-primary btn-lg">
-                                <i class="fas fa-search"></i> Find The ONE
+                                <i class="fas fa-search"></i> Search Recipes
                             </button>
                         </div>
                     </form>
@@ -70,9 +65,6 @@
                                 <small class="text-muted">{{ search.created_at.strftime('%Y-%m-%d %H:%M') }}</small>
                             </div>
                             <p class="mb-1">Searched on: {{ search.website }}</p>
-                            {% if search.notes %}
-                            <small class="text-muted">{{ search.notes }}</small>
-                            {% endif %}
                         </div>
                         {% endfor %}
                     </div>

@@ -2,90 +2,72 @@
 
 {% block content %}
 <div class="container mt-4">
-    <div class="row">
-        <div class="col-12">
-            <div class="card">
-                <div class="card-header">
-                    <h4 class="mb-0">Search History</h4>
-                </div>
-                <div class="card-body">
-                    {% if search_history.items %}
-                    <div class="table-responsive">
-                        <table class="table table-hover">
-                            <thead>
-                                <tr>
-                                    <th>Date</th>
-                                    <th>Search Query</th>
-                                    <th>Website</th>
-                                    <th>Notes</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for search in search_history.items %}
-                                <tr>
-                                    <td>{{ search.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
-                                    <td>{{ search.search_query }}</td>
-                                    <td>{{ search.website }}</td>
-                                    <td>{{ search.notes or '' }}</td>
-                                </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
+    <h1>Search History</h1>
 
-                    <!-- Pagination -->
-                    <nav aria-label="Search history pagination">
-                        <ul class="pagination justify-content-center">
-                            {% if search_history.has_prev %}
-                            <li class="page-item">
-                                <a class="page-link"
-                                    href="{{ url_for('main.search_history', page=search_history.prev_num) }}">Previous</a>
-                            </li>
-                            {% else %}
-                            <li class="page-item disabled">
-                                <span class="page-link">Previous</span>
-                            </li>
-                            {% endif %}
-
-                            {% for page_num in search_history.iter_pages() %}
-                            {% if page_num %}
-                            {% if page_num == search_history.page %}
-                            <li class="page-item active">
-                                <span class="page-link">{{ page_num }}</span>
-                            </li>
-                            {% else %}
-                            <li class="page-item">
-                                <a class="page-link" href="{{ url_for('main.search_history', page=page_num) }}">{{
-                                    page_num }}</a>
-                            </li>
-                            {% endif %}
-                            {% else %}
-                            <li class="page-item disabled">
-                                <span class="page-link">...</span>
-                            </li>
-                            {% endif %}
-                            {% endfor %}
-
-                            {% if search_history.has_next %}
-                            <li class="page-item">
-                                <a class="page-link"
-                                    href="{{ url_for('main.search_history', page=search_history.next_num) }}">Next</a>
-                            </li>
-                            {% else %}
-                            <li class="page-item disabled">
-                                <span class="page-link">Next</span>
-                            </li>
-                            {% endif %}
-                        </ul>
-                    </nav>
-                    {% else %}
-                    <div class="alert alert-info">
-                        No search history found. Start searching to see your history here!
-                    </div>
-                    {% endif %}
-                </div>
-            </div>
-        </div>
+    {% if search_history.items %}
+    <div class="table-responsive">
+        <table class="table table-striped">
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Website</th>
+                    <th>Query</th>
+                    <th>Ranking Type</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for search in search_history.items %}
+                <tr>
+                    <td>{{ search.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                    <td>{{ search.website }}</td>
+                    <td>{{ search.search_query }}</td>
+                    <td>{{ search.ranking_type }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
     </div>
+
+    <nav aria-label="Search history pagination">
+        <ul class="pagination">
+            {% if search_history.has_prev %}
+            <li class="page-item">
+                <a class="page-link"
+                    href="{{ url_for('main.search_history', page=search_history.prev_num) }}">Previous</a>
+            </li>
+            {% else %}
+            <li class="page-item disabled">
+                <span class="page-link">Previous</span>
+            </li>
+            {% endif %}
+
+            {% for page_num in search_history.iter_pages() %}
+            {% if page_num %}
+            <li class="page-item {% if page_num == search_history.page %}active{% endif %}">
+                <a class="page-link" href="{{ url_for('main.search_history', page=page_num) }}">{{ page_num }}</a>
+            </li>
+            {% else %}
+            <li class="page-item disabled">
+                <span class="page-link">...</span>
+            </li>
+            {% endif %}
+            {% endfor %}
+
+            {% if search_history.has_next %}
+            <li class="page-item">
+                <a class="page-link" href="{{ url_for('main.search_history', page=search_history.next_num) }}">Next</a>
+            </li>
+            {% else %}
+            <li class="page-item disabled">
+                <span class="page-link">Next</span>
+            </li>
+            {% endif %}
+        </ul>
+    </nav>
+    {% else %}
+    <div class="alert alert-info">
+        No search history found.
+    </div>
+    {% endif %}
 </div>
 {% endblock %}
