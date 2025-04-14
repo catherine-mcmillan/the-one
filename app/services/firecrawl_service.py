@@ -10,12 +10,76 @@ from typing import List, Optional, Any, Dict
 from firecrawl import FirecrawlApp
 import requests
 import hashlib
+from concurrent.futures import ThreadPoolExecutor, TimeoutError, as_completed
+import backoff  # For exponential backoff
+import gc  # For garbage collection
+import logging
+import threading
+import psutil  # For memory monitoring
+import os
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger('firecrawl_service')
 
 # DEVELOPMENT MODE SETTINGS - REMOVE IN PRODUCTION
 DEV_MODE = True  # Set to False in production
 MAX_RESULTS_DEV = 2  # Limit results during development (1 credit per page)
 USE_SMALLER_MODEL = True  # Use smaller model for development
 CACHE_DURATION = timedelta(hours=24)  # Cache results for 24 hours
+REQUEST_TIMEOUT = 600  # 10 minutes for complex searches
+MAX_RETRIES = 3
+RETRY_DELAY = 30  # 30 seconds between retries
+BACKOFF_FACTOR = 2  # Exponential backoff factor
+MAX_CONCURRENT_REQUESTS = 1  # Limit concurrent requests to avoid concurrency limits
+MEMORY_THRESHOLD = 70  # 70% memory usage threshold
+
+class RecipeResult(BaseModel):
+    """Model for recipe search results"""
+    title: str
+    rating: Optional[float] = None
+    description: str
+    url: Optional[str] = None
+    imageUrl: Optional[str] = None
+    summary: Optional[str] = None
+    prosCons: Optional[Dict[str, str]] = None
+    tipsTricks: Optional[str] = None
+    keyTakeaways: Optional[str] = None
+    uniqueAspect: Optional[str] = None
+
+class SearchResponse(BaseModel):
+    """Model for the search response"""
+    success: bool
+    data: Dict[str, Any]  # Changed from List[RecipeResult] to Dict[str, Any]
+    status: str
+    expiresAt: str
+
+class SearchResultItem(BaseModel):
+    """Schema for individual search results"""
+    rank: float = Field(description="Ranking of the result")
+    title: str = Field(description="Title of the result")
+    summary: str = Field(description="Summary of the result")
+    big_difference: Optional[str] = Field(None, description="What makes this result unique")
+    key_takeaways: Optional[str] = Field(None, description="Key takeaways from the result")
+    pros: Optional[str] = Field(None, description="Positive aspects")
+    cons: Optional[str] = Field(None, description="Negative aspects")
+    tips_and_tricks: Optional[str] = Field(None, description="Tips and tricks")
+    url: Optional[str] = Field(None, description="URL of the result")
+    image_url: Optional[str] = Field(None, description="Image URL if available")
+    rating: Optional[float] = Field(None, description="Rating if available")
+
+class ExtractSchema(BaseModel):
+    """Schema for detailed content extraction"""
+    title: str = Field(description="Title of the content")
+    summary: str = Field(description="Detailed summary")
+    big_difference: Optional[str] = Field(None, description="What makes this unique")
+    key_takeaways: Optional[str] = Field(None, description="Key takeaways")
+    pros: Optional[str] = Field(None, description="Positive aspects")
+    cons: Optional[str] = Field(None, description="Negative aspects")
+    tips_and_tricks: Optional[str] = Field(None, description="Tips and tricks")
+    rating: Optional[float] = Field(None, description="Rating if available")
+    url: Optional[str] = Field(None, description="URL of the result")
+    image_url: Optional[str] = Field(None, description="Image URL if available")
 
 class NestedModel(BaseModel):
     """Schema for individual search results"""
@@ -35,44 +99,122 @@ class ResultsContainer(BaseModel):
     """Container for results with dynamic key"""
     results: List[NestedModel] = Field(description="List of search results")
 
-class SearchResponse(BaseModel):
-    """Top-level response schema"""
-    data: List[Dict[str, List[NestedModel]]] = Field(description="List of result containers")
+# Custom exceptions
+class APIError(Exception):
+    """Base class for API errors"""
+    pass
+
+class RateLimitExceeded(APIError):
+    """Raised when API rate limit is exceeded"""
+    pass
+
+class AuthenticationError(APIError):
+    """Raised when API authentication fails"""
+    pass
 
 class FirecrawlAPIManager:
     """Manager for Firecrawl API requests with rate limit handling"""
     
     def __init__(self):
         self.api_key = current_app.config.get('FIRECRAWL_API_KEY')
-        self.base_url = current_app.config.get('FIRECRAWL_BASE_URL')
+        self.app = FirecrawlApp(api_key=self.api_key)
         self.daily_requests = 0
         self.daily_reset_time = datetime.now() + timedelta(days=1)
-        # Free tier limit is 100 requests per day
         self.daily_limit = current_app.config.get('FIRECRAWL_DAILY_LIMIT', 100)
+        self.executor = ThreadPoolExecutor(max_workers=MAX_CONCURRENT_REQUESTS)
+        self._request_semaphore = threading.Semaphore(MAX_CONCURRENT_REQUESTS)
+    
+    def _check_memory_usage(self):
+        """Check if memory usage is too high"""
+        memory_percent = psutil.Process().memory_percent()
+        if memory_percent > MEMORY_THRESHOLD:
+            logger.warning(f"Memory usage {memory_percent}% exceeds threshold {MEMORY_THRESHOLD}%")
+            gc.collect()  # Force garbage collection
+            time.sleep(5)  # Wait for memory to be freed
+    
+    def _log_api_response(self, response, operation):
+        """Log detailed API response information"""
+        try:
+            if isinstance(response, dict):
+                logger.info(f"Firecrawl {operation} Response: {json.dumps(response, indent=2)}")
+                if 'error' in response:
+                    logger.error(f"Firecrawl {operation} Error: {response['error']}")
+                if 'status' in response:
+                    logger.info(f"Firecrawl {operation} Status: {response['status']}")
+                if 'message' in response:
+                    logger.info(f"Firecrawl {operation} Message: {response['message']}")
+        except Exception as e:
+            logger.error(f"Error logging API response: {str(e)}")
+    
+    @backoff.on_exception(backoff.expo, 
+                         (APIError, TimeoutError, requests.exceptions.RequestException),
+                         max_tries=MAX_RETRIES,
+                         max_time=REQUEST_TIMEOUT)
+    def _execute_with_timeout(self, func, *args, **kwargs):
+        """Execute a function with a timeout and exponential backoff retries"""
+        with self._request_semaphore:
+            try:
+                self._check_memory_usage()
+                logger.info(f"Starting Firecrawl API request: {func.__name__}")
+                future = self.executor.submit(func, *args, **kwargs)
+                result = future.result(timeout=REQUEST_TIMEOUT)
+                
+                # Log the API response
+                self._log_api_response(result, func.__name__)
+                
+                # Force garbage collection after each request
+                gc.collect()
+                return result
+            except TimeoutError:
+                logger.warning("Request timed out, retrying with backoff")
+                raise
+            except Exception as e:
+                logger.error(f"API request failed: {str(e)}")
+                if "concurrency" in str(e).lower():
+                    logger.error("Concurrency limit reached, waiting before retry")
+                    time.sleep(RETRY_DELAY * 3)  # Wait longer for concurrency issues
+                elif "500" in str(e):
+                    logger.error("Server error (500), waiting before retry")
+                    time.sleep(RETRY_DELAY * 2)
+                raise APIError(f"API request failed: {str(e)}")
     
     def search(self, website, query):
-        """Search a website using Firecrawl API"""
+        """Search a website using Firecrawl API with improved error handling"""
         self._check_rate_limit()
         
-        url = f"{self.base_url}/v1/search"
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json"
-        }
-        payload = {
-            "url": f"https://{website}",
-            "query": query,
-            "schema": SearchResponse.model_json_schema(),
-            "enable_web_search": True
-        }
-        
         try:
-            response = requests.post(url, headers=headers, json=payload)
-            response.raise_for_status()
+            logger.info(f"Starting search for '{query}' on {website}")
+            
+            # Use the SDK to perform the search with wildcard URL
+            data = self._execute_with_timeout(
+                self.app.extract,
+                [f"https://{website}/*"],
+                {
+                    'prompt': f'Search for the top 5 results related to "{query}" on {website}. For each result, provide:\n'
+                             f'1. A clear title\n'
+                             f'2. A detailed summary\n'
+                             f'3. What makes this result unique (big difference)\n'
+                             f'4. Key takeaways\n'
+                             f'5. Pros and cons\n'
+                             f'6. Tips and tricks\n'
+                             f'7. Rating if available\n'
+                             f'8. URL and image URL if available',
+                    'schema': SearchResponse.model_json_schema(),
+                    'enable_web_search': True,
+                    'max_results': 5,
+                    'include_comments': True,
+                    'summarize_comments': True,
+                    'timeout': REQUEST_TIMEOUT,  # Pass timeout to API
+                    'retry_on_error': True,  # Enable retry on error
+                    'max_retries': 3  # Maximum number of retries for the API
+                }
+            )
+            
             self.daily_requests += 1
+            logger.info(f"Search completed successfully. Daily requests: {self.daily_requests}")
             
             # Parse and validate response against our schema
-            search_response = SearchResponse(**response.json())
+            search_response = SearchResponse(**data)
             
             # Extract results from the nested structure
             results = []
@@ -94,48 +236,60 @@ class FirecrawlAPIManager:
                         )
                         results.append(result)
             
+            logger.info(f"Successfully processed {len(results)} results")
             return results
             
-        except requests.exceptions.RequestException as e:
-            current_app.logger.error(f"Search API error: {str(e)}")
-            if hasattr(e, 'response') and e.response is not None:
-                if e.response.status_code == 429:
-                    raise RateLimitExceeded("Firecrawl API rate limit exceeded")
-                elif e.response.status_code == 401:
-                    raise AuthenticationError("Invalid Firecrawl API key")
+        except Exception as e:
+            logger.error(f"Search API error: {str(e)}")
+            if "concurrency" in str(e).lower():
+                logger.error("Concurrency limit reached, using cached results if available")
+                cache_key = get_cache_key("search", website=website, query=query)
+                cached_result = cache.get(cache_key)
+                if cached_result:
+                    logger.info("Using cached result due to concurrency limit")
+                    return cached_result
+            elif "500" in str(e):
+                logger.error("Server error (500), using cached results if available")
+                cache_key = get_cache_key("search", website=website, query=query)
+                cached_result = cache.get(cache_key)
+                if cached_result:
+                    logger.info("Using cached result due to API error")
+                    return cached_result
             raise APIError(f"Firecrawl API error: {str(e)}")
     
     def extract(self, url, include_comments=True, summarize_comments=True):
         """Extract content from a URL with optional comment analysis"""
         self._check_rate_limit()
         
-        extract_url = f"{self.base_url}/v1/extract"
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json"
-        }
-        payload = {
-            "url": url,
-            "include_comments": include_comments,
-            "summarize_comments": summarize_comments,
-            "schema": NestedModel.model_json_schema()
-        }
-        
         try:
-            response = requests.post(extract_url, headers=headers, json=payload)
-            response.raise_for_status()
+            # Use the SDK to extract content
+            data = self._execute_with_timeout(
+                self.app.extract,
+                [url],
+                {
+                    'prompt': 'Extract detailed information from this page, including any user comments or reviews. Provide:\n'
+                             '1. A clear title\n'
+                             '2. A detailed summary\n'
+                             '3. What makes this result unique (big difference)\n'
+                             '4. Key takeaways\n'
+                             '5. Pros and cons\n'
+                             '6. Tips and tricks\n'
+                             '7. Rating if available',
+                    'schema': NestedModel.model_json_schema(),
+                    'enable_web_search': True,
+                    'include_comments': include_comments,
+                    'summarize_comments': summarize_comments
+                }
+            )
+            
             self.daily_requests += 1
             
             # Parse and validate response against our schema
-            result = NestedModel(**response.json())
+            result = NestedModel(**data)
             return result.dict()
-        except requests.exceptions.RequestException as e:
+            
+        except Exception as e:
             current_app.logger.error(f"Extract API error: {str(e)}")
-            if hasattr(e, 'response') and e.response is not None:
-                if e.response.status_code == 429:
-                    raise RateLimitExceeded("Firecrawl API rate limit exceeded")
-                elif e.response.status_code == 401:
-                    raise AuthenticationError("Invalid Firecrawl API key")
             raise APIError(f"Firecrawl API error: {str(e)}")
     
     def _check_rate_limit(self):
@@ -148,20 +302,6 @@ class FirecrawlAPIManager:
             
         if self.daily_requests >= self.daily_limit:
             raise RateLimitExceeded("Daily API request limit reached")
-
-
-# Custom exceptions
-class APIError(Exception):
-    """Base class for API errors"""
-    pass
-
-class RateLimitExceeded(APIError):
-    """Raised when API rate limit is exceeded"""
-    pass
-
-class AuthenticationError(APIError):
-    """Raised when API authentication fails"""
-    pass
 
 def get_cache_key(prefix, **kwargs):
     """Generate a cache key from prefix and kwargs"""
@@ -180,7 +320,7 @@ def search_website(website, query, ranking_type="relevance"):
     api_manager = FirecrawlAPIManager()
     if api_manager.daily_requests > 90:  # 90% of free tier limit
         # Force cache usage when close to limits
-        cache_key = get_cache_key("search", website=website, query=query, ranking_type=ranking_type)
+        cache_key = get_cache_key("search", website=website, query=query)
         cached_result = cache.get(cache_key)
         if cached_result:
             current_app.logger.info("Using cached result due to API limit constraints")
@@ -204,67 +344,83 @@ def search_website_internal(website, query, ranking_type="relevance"):
             return cached_result
 
         # Perform search request
-        search_data = api_manager.search(website, query)
+        results = api_manager.search(website, query)
         
-        # Process the search results
-        results = []
-        if 'results' in search_data:
-            for item in search_data['results']:
-                result = NestedModel(
-                    rank=item.get('rank', 0.0),
-                    title=item.get('title', 'No Title'),
-                    summary=item.get('summary', ''),
-                    big_difference=item.get('big_difference'),
-                    key_takeaways=item.get('key_takeaways'),
-                    pros=item.get('pros', ''),
-                    cons=item.get('cons', ''),
-                    tips_and_tricks=item.get('tips_and_tricks'),
-                    url=item.get('url', ''),
-                    image_url=item.get('image_url'),
-                    rating=item.get('rating')
-                )
-                results.append(result)
+        # For debugging
+        current_app.logger.debug(f"Raw results from API: {json.dumps(results, indent=2)}")
+        
+        # Process results into a consistent format
+        processed_results = []
+        for item in results:
+            result = {
+                "rank": item.get("rank", 0),
+                "title": item.get("title", "Untitled"),
+                "summary": item.get("summary", ""),
+                "big_difference": item.get("big_difference"),
+                "key_takeaways": item.get("key_takeaways"),
+                "pros": item.get("pros"),
+                "cons": item.get("cons"),
+                "tips_and_tricks": item.get("tips_and_tricks"),
+                "url": item.get("url"),
+                "image_url": item.get("image_url"),
+                "rating": item.get("rating")
+            }
+            processed_results.append(result)
         
         # If ratings-based ranking is requested, get detailed info
-        if ranking_type == "ratings" and results:
+        if ranking_type == "ratings" and processed_results:
             # Limit to top 5 results to conserve API usage
             detailed_results = []
-            for result in tqdm(results[:5], desc="Analyzing detailed results"):
+            for result in tqdm(processed_results[:5], desc="Analyzing detailed results"):
+                # Skip results without URLs
+                if not result.get("url"):
+                    detailed_results.append(result)
+                    continue
+                    
                 # Check cache for detailed result
-                detail_cache_key = get_cache_key("detail", url=result.url)
+                detail_cache_key = get_cache_key("detail", url=result.get("url"))
                 cached_detail = cache.get(detail_cache_key)
                 
                 if cached_detail:
-                    current_app.logger.info("Using cached detailed result")
-                    result = cached_detail
+                    current_app.logger.info(f"Using cached detailed result for {result.get('url')}")
+                    detailed_result = cached_detail
                 else:
-                    extract_data = api_manager.extract(
-                        result.url, 
-                        include_comments=True,
-                        summarize_comments=True
-                    )
-                    
-                    # Update result with extracted data
-                    result.summary = extract_data.get('summary', result.summary)
-                    result.big_difference = extract_data.get('big_difference', result.big_difference)
-                    result.key_takeaways = extract_data.get('key_takeaways', result.key_takeaways)
-                    result.pros = extract_data.get('pros', result.pros)
-                    result.cons = extract_data.get('cons', result.cons)
-                    result.tips_and_tricks = extract_data.get('tips_and_tricks', result.tips_and_tricks)
-                    result.rating = extract_data.get('rating', result.rating)
-                    
-                    # Cache the detailed result
-                    cache.set(detail_cache_key, result)
+                    try:
+                        extract_data = api_manager.extract(
+                            result.get("url"), 
+                            include_comments=True,
+                            summarize_comments=True
+                        )
+                        
+                        # Update result with extracted data
+                        detailed_result = result.copy()
+                        detailed_result.update({
+                            "summary": extract_data.get("summary", result.get("summary", "")),
+                            "big_difference": extract_data.get("big_difference", result.get("big_difference")),
+                            "key_takeaways": extract_data.get("key_takeaways", result.get("key_takeaways")),
+                            "pros": extract_data.get("pros", result.get("pros")),
+                            "cons": extract_data.get("cons", result.get("cons")),
+                            "tips_and_tricks": extract_data.get("tips_and_tricks", result.get("tips_and_tricks")),
+                            "rating": extract_data.get("rating", result.get("rating"))
+                        })
+                        
+                        # Cache the detailed result
+                        cache.set(detail_cache_key, detailed_result)
+                    except Exception as e:
+                        current_app.logger.error(f"Error extracting details for {result.get('url')}: {str(e)}")
+                        detailed_result = result
                 
-                detailed_results.append(result)
+                detailed_results.append(detailed_result)
             
             # Sort by rating
-            detailed_results.sort(key=lambda x: x.rating if x.rating else 0, reverse=True)
-            results = detailed_results
+            detailed_results.sort(key=lambda x: x.get('rating', 0) or 0, reverse=True)
+            results_to_return = detailed_results
+        else:
+            results_to_return = processed_results
         
         # Cache the results
-        cache.set(cache_key, results)
-        return results
+        cache.set(cache_key, results_to_return)
+        return results_to_return
     
     except RateLimitExceeded as e:
         current_app.logger.error(f"Rate limit exceeded: {str(e)}")
@@ -279,7 +435,7 @@ def search_website_internal(website, query, ranking_type="relevance"):
         search_website.last_error = f"An error occurred with the API: {str(e)}"
         return []
     except Exception as e:
-        current_app.logger.error(f"Unexpected error: {str(e)}")
+        current_app.logger.error(f"Unexpected error in search_website_internal: {str(e)}")
         search_website.last_error = "An unexpected error occurred."
         return []
 
@@ -345,6 +501,10 @@ def get_detailed_results(basic_results, website):
     
     for result in tqdm(basic_results, desc="Analyzing detailed results"):
         try:
+            if not result.get('url'):
+                enhanced_results.append(result)
+                continue
+                
             payload = {
                 "url": result['url'],
                 "include_comments": True,
@@ -374,11 +534,11 @@ def get_detailed_results(basic_results, website):
             enhanced_results.append(result)
             
         except requests.exceptions.RequestException as e:
-            current_app.logger.error(f"Error getting details for {result['url']}: {str(e)}")
+            current_app.logger.error(f"Error getting details for {result.get('url', 'unknown URL')}: {str(e)}")
             enhanced_results.append(result)  # Add the basic result without enhancements
     
     # Sort by rating if available
-    enhanced_results.sort(key=lambda x: x.get('rating', 0), reverse=True)
+    enhanced_results.sort(key=lambda x: x.get('rating', 0) or 0, reverse=True)
     
     return enhanced_results
 
@@ -403,5 +563,199 @@ def get_best_results(results, ranking_type="relevance"):
         return results[:max_results]
     else:
         # Sort by rating if available
-        results.sort(key=lambda x: x.get('rating', 0), reverse=True)
+        results.sort(key=lambda x: x.get('rating', 0) or 0, reverse=True)
         return results[:max_results]
+
+class FirecrawlService:
+    def __init__(self):
+        self.api_key = os.getenv('FIRECRAWL_API_KEY')
+        if not self.api_key:
+            raise ValueError("FIRECRAWL_API_KEY not found in environment variables")
+        self.app = FirecrawlApp(api_key=self.api_key)
+        self.executor = ThreadPoolExecutor(max_workers=1)
+
+    def _check_memory_usage(self):
+        """Check memory usage and trigger garbage collection if needed"""
+        import psutil
+        import gc
+        
+        process = psutil.Process()
+        memory_percent = process.memory_percent()
+        
+        if memory_percent > MEMORY_THRESHOLD:
+            logger.warning(f"Memory usage high: {memory_percent:.1f}%")
+            gc.collect()
+            memory_percent = process.memory_percent()
+            logger.info(f"Memory after cleanup: {memory_percent:.1f}%")
+
+    def _execute_with_timeout(self, func, *args, **kwargs):
+        """Execute a function with timeout and retry logic"""
+        self._check_memory_usage()
+        
+        for attempt in range(MAX_RETRIES):
+            try:
+                future = self.executor.submit(func, *args, **kwargs)
+                return future.result(timeout=REQUEST_TIMEOUT)
+            except TimeoutError:
+                logger.warning(f"Request timed out (attempt {attempt + 1}/{MAX_RETRIES})")
+                if attempt < MAX_RETRIES - 1:
+                    time.sleep(RETRY_DELAY)
+                else:
+                    raise
+            except Exception as e:
+                logger.error(f"Error during request: {str(e)}")
+                if attempt < MAX_RETRIES - 1:
+                    time.sleep(RETRY_DELAY)
+                else:
+                    raise
+
+    def _log_api_response(self, response: Dict[str, Any], is_complex: bool = False):
+        """Log API response details"""
+        search_type = "Complex" if is_complex else "Simple"
+        logger.info(f"{search_type} Search Response:")
+        logger.info(f"Status: {response.get('status')}")
+        logger.info(f"Success: {response.get('success')}")
+        
+        if 'data' in response:
+            for category, items in response['data'].items():
+                logger.info(f"Found {len(items)} items in {category}")
+                for item in items:
+                    logger.info(f"Title: {item.get('title', 'N/A')}")
+                    logger.info(f"Rating: {item.get('rating', 'N/A')}")
+                    if is_complex:
+                        logger.info(f"Summary: {item.get('summary', 'N/A')}")
+                        logger.info(f"Unique Aspect: {item.get('uniqueAspect', 'N/A')}")
+                    logger.info("---")
+
+    def _process_api_response(self, response: Dict[str, Any]) -> List[RecipeResult]:
+        """Process the API response and extract recipe results"""
+        try:
+            # First level validation
+            search_response = SearchResponse(**response)
+            
+            if not search_response.success:
+                logger.warning("API response indicated failure")
+                return []
+            
+            # Extract recipes from the nested data structure
+            recipes = []
+            
+            # The response has a nested structure: response -> data -> data -> results
+            if isinstance(search_response.data, dict):
+                inner_data = search_response.data.get('data', {})
+                if isinstance(inner_data, dict):
+                    # Handle the main recipe data
+                    main_recipe = {
+                        'title': inner_data.get('title', ''),
+                        'description': inner_data.get('summary', ''),
+                        'rating': float(inner_data.get('rating', 0)) if inner_data.get('rating') else None,
+                        'url': inner_data.get('url'),
+                        'imageUrl': inner_data.get('image_url'),
+                        'summary': inner_data.get('summary'),
+                        'prosCons': {
+                            'pros': inner_data.get('pros', ''),
+                            'cons': inner_data.get('cons', '')
+                        },
+                        'tipsTricks': inner_data.get('tips'),
+                        'keyTakeaways': inner_data.get('key_takeaways'),
+                        'uniqueAspect': inner_data.get('unique')
+                    }
+                    recipes.append(RecipeResult(**main_recipe))
+                    
+                    # Handle additional results if present
+                    results = inner_data.get('results', [])
+                    if isinstance(results, list):
+                        for result in results:
+                            try:
+                                recipe = RecipeResult(
+                                    title=result.get('title', ''),
+                                    description=result.get('summary', ''),
+                                    rating=float(result.get('rating', 0)) if result.get('rating') else None,
+                                    url=result.get('url'),
+                                    imageUrl=result.get('image_url'),
+                                    summary=result.get('summary'),
+                                    prosCons={
+                                        'pros': result.get('pros', ''),
+                                        'cons': result.get('cons', '')
+                                    },
+                                    tipsTricks=result.get('tips'),
+                                    keyTakeaways=result.get('key_takeaways'),
+                                    uniqueAspect=result.get('unique')
+                                )
+                                recipes.append(recipe)
+                            except Exception as e:
+                                logger.error(f"Error processing additional recipe: {str(e)}")
+                                continue
+            
+            logger.info(f"Successfully processed {len(recipes)} recipes")
+            return recipes
+            
+        except Exception as e:
+            logger.error(f"Error processing API response: {str(e)}")
+            logger.error(f"Response structure: {json.dumps(response, indent=2)}")
+            return []
+
+    def search(self, website: str, query: str, max_results: int = 3) -> List[RecipeResult]:
+        """Perform a simple search"""
+        try:
+            logger.info(f"Starting simple search for '{query}' on {website}")
+            
+            response = self._execute_with_timeout(
+                self.app.extract,
+                [f"https://{website}/*"],
+                {
+                    'prompt': f'Find the top {max_results} {query} recipes on {website}. For each recipe, provide:\n'
+                             f'1. Recipe title\n'
+                             f'2. Brief description\n'
+                             f'3. Rating if available',
+                    'enable_web_search': True,
+                    'max_results': max_results,
+                    'include_comments': False,
+                    'summarize_comments': False,
+                    'timeout': REQUEST_TIMEOUT,
+                    'retry_on_error': True,
+                    'max_retries': MAX_RETRIES
+                }
+            )
+            
+            self._log_api_response(response)
+            return self._process_api_response(response)
+            
+        except Exception as e:
+            logger.error(f"Error during simple search: {str(e)}")
+            raise
+
+    def extract(self, website: str, query: str, max_results: int = 3) -> List[RecipeResult]:
+        """Perform a complex search with detailed summaries"""
+        try:
+            logger.info(f"Starting complex search for '{query}' on {website}")
+            
+            response = self._execute_with_timeout(
+                self.app.extract,
+                [f"https://{website}/*"],
+                {
+                    'prompt': f'Search for the top {max_results} {query} recipes on {website}. For each recipe, provide:\n'
+                             f'1. A clear title\n'
+                             f'2. A detailed summary\n'
+                             f'3. What makes this recipe unique (big difference)\n'
+                             f'4. Key takeaways\n'
+                             f'5. Pros and cons\n'
+                             f'6. Tips and tricks\n'
+                             f'7. Rating if available\n'
+                             f'8. URL and image URL if available',
+                    'enable_web_search': True,
+                    'max_results': max_results,
+                    'include_comments': True,
+                    'summarize_comments': True,
+                    'timeout': REQUEST_TIMEOUT,
+                    'retry_on_error': True,
+                    'max_retries': MAX_RETRIES
+                }
+            )
+            
+            self._log_api_response(response, is_complex=True)
+            return self._process_api_response(response)
+            
+        except Exception as e:
+            logger.error(f"Error during complex search: {str(e)}")
+            raise

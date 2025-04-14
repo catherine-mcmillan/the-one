@@ -3,71 +3,107 @@ from flask_login import login_required, current_user
 from app.main import bp
 from app.models import UserSearchHistory, SearchResult
 from app.extensions import db
-from app.services.firecrawl_service import search_website, get_best_results, FirecrawlAPIManager
+from app.services.firecrawl_service import search_website, get_best_results, FirecrawlAPIManager, FirecrawlService
 from tqdm import tqdm
 from datetime import datetime
 import json
 import uuid
+import time
+import threading
+
+# Store search results in memory (you might want to use Redis or a database in production)
+search_results = {}
+search_status = {}
 
 @bp.route('/', methods=['GET'])
 def index():
     return render_template('main/index.html', title='The ONE - Find the Best of Everything')
 
-@bp.route('/search', methods=['POST'])
-@login_required
+@bp.route('/search', methods=['GET', 'POST'])
 def search():
-    website = request.form.get('website')
-    query = request.form.get('query')
-    ranking_type = request.form.get('ranking_type', 'relevance')
-    
-    if not website or not query:
-        flash('Please provide both website and search query', 'error')
-        return redirect(url_for('main.index'))
-    
-    try:
-        # Perform the search
-        results = search_website(website, query, ranking_type)
+    if request.method == 'POST':
+        website = request.form.get('website')
+        query = request.form.get('query')
+        search_type = request.form.get('search_type', 'simple')
         
-        # Store search history
-        search_history = UserSearchHistory(
-            user_id=current_user.id,
-            website=website,
-            search_query=query,
-            ranking_type=ranking_type,
-            created_at=datetime.utcnow()
-        )
-        db.session.add(search_history)
-        db.session.commit()
+        if not website or not query:
+            return redirect(url_for('main.index'))
         
-        # Render the results template
-        return render_template('results.html',
-                            website=website,
-                            query=query,
-                            results=results,
-                            ranking_type=ranking_type)
+        # Generate a unique search ID
+        search_id = f"{website}_{query}_{int(time.time())}"
+        
+        # Initialize search status
+        search_status[search_id] = {
+            'complete': False,
+            'start_time': time.time(),
+            'website': website,
+            'query': query,
+            'search_type': search_type
+        }
+        
+        # Start search in background
+        thread = threading.Thread(target=perform_search, args=(search_id,))
+        thread.start()
+        
+        # Redirect to loading page
+        return redirect(url_for('main.loading', search_id=search_id))
     
-    except Exception as e:
-        current_app.logger.error(f"Search error: {str(e)}")
-        flash('An error occurred during the search. Please try again.', 'error')
+    return render_template('index.html')
+
+@bp.route('/loading/<search_id>')
+def loading(search_id):
+    if search_id not in search_status:
         return redirect(url_for('main.index'))
+    return render_template('loading.html')
+
+@bp.route('/check_search_status')
+def check_search_status():
+    search_id = request.args.get('search_id')
+    if not search_id or search_id not in search_status:
+        return jsonify({'complete': False})
+    
+    status = search_status[search_id]
+    if status['complete']:
+        # Clean up the status
+        del search_status[search_id]
+        return jsonify({
+            'complete': True,
+            'redirect_url': url_for('main.results', search_id=search_id)
+        })
+    
+    return jsonify({'complete': False})
 
 @bp.route('/results/<search_id>')
-@login_required
 def results(search_id):
-    search_data = session.get(f'search_{search_id}')
-    
-    if not search_data:
-        flash('Search results not found or expired. Please try a new search.', 'warning')
+    if search_id not in search_results:
         return redirect(url_for('main.index'))
     
-    return render_template(
-        'main/results.html',
-        title='Search Results',
-        website=search_data['website'],
-        query=search_data['query'],
-        ranking_type=search_data['ranking_type'],
-        results=search_data['results']
-    )
+    results = search_results[search_id]
+    # Clean up the results
+    del search_results[search_id]
+    
+    return render_template('results.html', results=results)
+
+def perform_search(search_id):
+    """Perform the search in a background thread"""
+    try:
+        status = search_status[search_id]
+        firecrawl = FirecrawlService()
+        
+        if status['search_type'] == 'simple':
+            results = firecrawl.search(status['website'], status['query'])
+        else:
+            results = firecrawl.extract(status['website'], status['query'])
+        
+        # Store results
+        search_results[search_id] = results
+        # Mark as complete
+        search_status[search_id]['complete'] = True
+        
+    except Exception as e:
+        # Handle error
+        search_status[search_id]['error'] = str(e)
+        search_status[search_id]['complete'] = True
 
 @bp.route('/search_history')
 @login_required

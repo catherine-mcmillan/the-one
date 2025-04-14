@@ -13,3 +13,5 @@ flask-login==0.6.3
 Flask-Migrate==4.0.5
 flask-caching==2.1.0
 firecrawl==1.16.0
+backoff==2.2.1
+psutil==5.9.8
