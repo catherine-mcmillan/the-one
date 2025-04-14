@@ -143,6 +143,11 @@ class FirecrawlAPIManager:
                     logger.info(f"Firecrawl {operation} Status: {response['status']}")
                 if 'message' in response:
                     logger.info(f"Firecrawl {operation} Message: {response['message']}")
+            elif isinstance(response, list):
+                logger.info(f"Firecrawl {operation} Response: {json.dumps(response, indent=2)}")
+            else:
+                logger.warning(f"Unexpected response type in {operation}: {type(response)}")
+                logger.warning(f"Response content: {str(response)}")
         except Exception as e:
             logger.error(f"Error logging API response: {str(e)}")
     
@@ -214,30 +219,13 @@ class FirecrawlAPIManager:
             logger.info(f"Search completed successfully. Daily requests: {self.daily_requests}")
             
             # Parse and validate response against our schema
-            search_response = SearchResponse(**data)
-            
-            # Extract results from the nested structure
-            results = []
-            for container in search_response.data:
-                for key, items in container.items():
-                    for item in items:
-                        result = NestedModel(
-                            rank=item.rank,
-                            title=item.title,
-                            summary=item.summary,
-                            big_difference=item.big_difference,
-                            key_takeaways=item.key_takeaways,
-                            pros=item.pros,
-                            cons=item.cons,
-                            tips_and_tricks=item.tips_and_tricks,
-                            url=item.url,
-                            image_url=item.image_url,
-                            rating=item.rating
-                        )
-                        results.append(result)
-            
-            logger.info(f"Successfully processed {len(results)} results")
-            return results
+            try:
+                search_response = SearchResponse(**data)
+                return search_response.dict()
+            except Exception as e:
+                logger.warning(f"Failed to parse response as SearchResponse: {str(e)}")
+                logger.warning(f"Raw response: {json.dumps(data, indent=2)}")
+                return data  # Return raw data if parsing fails
             
         except Exception as e:
             logger.error(f"Search API error: {str(e)}")
@@ -270,11 +258,11 @@ class FirecrawlAPIManager:
                     'prompt': 'Extract detailed information from this page, including any user comments or reviews. Provide:\n'
                              '1. A clear title\n'
                              '2. A detailed summary\n'
-                             '3. What makes this result unique (big difference)\n'
-                             '4. Key takeaways\n'
-                             '5. Pros and cons\n'
-                             '6. Tips and tricks\n'
-                             '7. Rating if available',
+                             f'3. What makes this result unique (big difference)\n'
+                             f'4. Key takeaways\n'
+                             f'5. Pros and cons\n'
+                             f'6. Tips and tricks\n'
+                             f'7. Rating if available',
                     'schema': NestedModel.model_json_schema(),
                     'enable_web_search': True,
                     'include_comments': include_comments,
@@ -344,83 +332,84 @@ def search_website_internal(website, query, ranking_type="relevance"):
             return cached_result
 
         # Perform search request
-        results = api_manager.search(website, query)
+        response = api_manager.search(website, query)
         
-        # For debugging
-        current_app.logger.debug(f"Raw results from API: {json.dumps(results, indent=2)}")
+        # For debugging - log the raw response
+        current_app.logger.debug(f"Raw API response: {json.dumps(response, indent=2)}")
         
         # Process results into a consistent format
         processed_results = []
-        for item in results:
-            result = {
-                "rank": item.get("rank", 0),
-                "title": item.get("title", "Untitled"),
-                "summary": item.get("summary", ""),
-                "big_difference": item.get("big_difference"),
-                "key_takeaways": item.get("key_takeaways"),
-                "pros": item.get("pros"),
-                "cons": item.get("cons"),
-                "tips_and_tricks": item.get("tips_and_tricks"),
-                "url": item.get("url"),
-                "image_url": item.get("image_url"),
-                "rating": item.get("rating")
-            }
-            processed_results.append(result)
         
-        # If ratings-based ranking is requested, get detailed info
-        if ranking_type == "ratings" and processed_results:
-            # Limit to top 5 results to conserve API usage
-            detailed_results = []
-            for result in tqdm(processed_results[:5], desc="Analyzing detailed results"):
-                # Skip results without URLs
-                if not result.get("url"):
-                    detailed_results.append(result)
-                    continue
+        # Handle the response based on its type
+        if isinstance(response, list):
+            # If response is already a list of results
+            for idx, item in enumerate(response, start=1):
+                result = {
+                    "rank": idx,
+                    "title": getattr(item, 'title', "Untitled"),
+                    "summary": getattr(item, 'summary', ""),
+                    "big_difference": getattr(item, 'big_difference', ""),
+                    "key_takeaways": getattr(item, 'key_takeaways', []),
+                    "pros": getattr(item, 'pros', []),
+                    "cons": getattr(item, 'cons', []),
+                    "tips_and_tricks": getattr(item, 'tips_and_tricks', []),
+                    "url": getattr(item, 'url', ""),
+                    "image_url": getattr(item, 'image_url', ""),
+                    "rating": float(getattr(item, 'rating', 0)) if getattr(item, 'rating', None) else None
+                }
+                processed_results.append(result)
+        elif isinstance(response, dict):
+            # If response is a dictionary
+            data = response.get('data', {})
+            if isinstance(data, dict):
+                inner_data = data.get('data', {})
+                if isinstance(inner_data, dict):
+                    # Handle the main result
+                    result = {
+                        "rank": 1,
+                        "title": inner_data.get("title", "Untitled"),
+                        "summary": inner_data.get("summary", ""),
+                        "big_difference": inner_data.get("big_difference", ""),
+                        "key_takeaways": inner_data.get("key_takeaways", []),
+                        "pros": inner_data.get("pros", []),
+                        "cons": inner_data.get("cons", []),
+                        "tips_and_tricks": inner_data.get("tips", []),
+                        "url": inner_data.get("url", ""),
+                        "image_url": inner_data.get("image_url", ""),
+                        "rating": float(inner_data.get("rating", 0)) if inner_data.get("rating") else None
+                    }
+                    processed_results.append(result)
                     
-                # Check cache for detailed result
-                detail_cache_key = get_cache_key("detail", url=result.get("url"))
-                cached_detail = cache.get(detail_cache_key)
-                
-                if cached_detail:
-                    current_app.logger.info(f"Using cached detailed result for {result.get('url')}")
-                    detailed_result = cached_detail
-                else:
-                    try:
-                        extract_data = api_manager.extract(
-                            result.get("url"), 
-                            include_comments=True,
-                            summarize_comments=True
-                        )
-                        
-                        # Update result with extracted data
-                        detailed_result = result.copy()
-                        detailed_result.update({
-                            "summary": extract_data.get("summary", result.get("summary", "")),
-                            "big_difference": extract_data.get("big_difference", result.get("big_difference")),
-                            "key_takeaways": extract_data.get("key_takeaways", result.get("key_takeaways")),
-                            "pros": extract_data.get("pros", result.get("pros")),
-                            "cons": extract_data.get("cons", result.get("cons")),
-                            "tips_and_tricks": extract_data.get("tips_and_tricks", result.get("tips_and_tricks")),
-                            "rating": extract_data.get("rating", result.get("rating"))
-                        })
-                        
-                        # Cache the detailed result
-                        cache.set(detail_cache_key, detailed_result)
-                    except Exception as e:
-                        current_app.logger.error(f"Error extracting details for {result.get('url')}: {str(e)}")
-                        detailed_result = result
-                
-                detailed_results.append(detailed_result)
-            
-            # Sort by rating
-            detailed_results.sort(key=lambda x: x.get('rating', 0) or 0, reverse=True)
-            results_to_return = detailed_results
+                    # Handle additional results
+                    results = inner_data.get('results', [])
+                    if isinstance(results, list):
+                        for idx, item in enumerate(results, start=2):
+                            result = {
+                                "rank": idx,
+                                "title": item.get("title", "Untitled"),
+                                "summary": item.get("summary", ""),
+                                "big_difference": item.get("big_difference", ""),
+                                "key_takeaways": item.get("key_takeaways", []),
+                                "pros": item.get("pros", []),
+                                "cons": item.get("cons", []),
+                                "tips_and_tricks": item.get("tips", []),
+                                "url": item.get("url", ""),
+                                "image_url": item.get("image_url", ""),
+                                "rating": float(item.get("rating", 0)) if item.get("rating") else None
+                            }
+                            processed_results.append(result)
         else:
-            results_to_return = processed_results
+            # If response is neither list nor dict, return it as is for debugging
+            current_app.logger.warning(f"Unexpected response type: {type(response)}")
+            return [{"raw_response": str(response)}]
+        
+        # If ratings-based ranking is requested, sort by rating
+        if ranking_type == "ratings":
+            processed_results.sort(key=lambda x: x.get('rating', 0) or 0, reverse=True)
         
         # Cache the results
-        cache.set(cache_key, results_to_return)
-        return results_to_return
+        cache.set(cache_key, processed_results)
+        return processed_results
     
     except RateLimitExceeded as e:
         current_app.logger.error(f"Rate limit exceeded: {str(e)}")
@@ -719,7 +708,59 @@ class FirecrawlService:
             )
             
             self._log_api_response(response)
-            return self._process_api_response(response)
+            
+            # Process the response
+            recipes = []
+            if response.get('success'):
+                data = response.get('data', {})
+                if isinstance(data, dict):
+                    inner_data = data.get('data', {})
+                    if isinstance(inner_data, dict):
+                        # Handle the main recipe
+                        main_recipe = {
+                            'title': inner_data.get('title', ''),
+                            'description': inner_data.get('summary', ''),
+                            'rating': float(inner_data.get('rating', 0)) if inner_data.get('rating') else None,
+                            'url': inner_data.get('url'),
+                            'imageUrl': inner_data.get('image_url'),
+                            'summary': inner_data.get('summary'),
+                            'prosCons': {
+                                'pros': inner_data.get('pros', ''),
+                                'cons': inner_data.get('cons', '')
+                            },
+                            'tipsTricks': inner_data.get('tips'),
+                            'keyTakeaways': inner_data.get('key_takeaways'),
+                            'uniqueAspect': inner_data.get('unique')
+                        }
+                        recipes.append(RecipeResult(**main_recipe))
+                        
+                        # Handle additional results
+                        results = inner_data.get('results', [])
+                        if isinstance(results, list):
+                            for result in results:
+                                try:
+                                    recipe = RecipeResult(
+                                        title=result.get('title', ''),
+                                        description=result.get('summary', ''),
+                                        rating=float(result.get('rating', 0)) if result.get('rating') else None,
+                                        url=result.get('url'),
+                                        imageUrl=result.get('image_url'),
+                                        summary=result.get('summary'),
+                                        prosCons={
+                                            'pros': result.get('pros', ''),
+                                            'cons': result.get('cons', '')
+                                        },
+                                        tipsTricks=result.get('tips'),
+                                        keyTakeaways=result.get('key_takeaways'),
+                                        uniqueAspect=result.get('unique')
+                                    )
+                                    recipes.append(recipe)
+                                except Exception as e:
+                                    logger.error(f"Error processing additional recipe: {str(e)}")
+                                    continue
+            
+            logger.info(f"Successfully processed {len(recipes)} recipes")
+            return recipes
             
         except Exception as e:
             logger.error(f"Error during simple search: {str(e)}")

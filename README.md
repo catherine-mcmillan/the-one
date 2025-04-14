@@ -5,11 +5,9 @@
 ## Features
 
 - Search through popular websites to find the best products, recipes, tutorials, etc.
-- Choose between simple or detailed search results
+- Choose between relevance-based or ratings-based search results
 - View detailed summaries of user comments, including pros, cons, and tips
 - Get insights into why a particular item is considered "the best" based on collective user feedback
-- Engaging loading page with progress updates and fun messages during search
-- Background processing for long-running searches
 
 ## Technologies Used
 
@@ -17,7 +15,6 @@
 - Flask web framework
 - Firecrawl API for web scraping and data extraction
 - Bootstrap for responsive design
-- Pydantic for data validation
 - Deployed on Fly.io
 
 ## Installation and Setup
@@ -66,20 +63,11 @@
 
 1. On the homepage, enter the website you want to search (e.g., allrecipes.com)
 2. Enter your search query (e.g., "chocolate chip cookies")
-3. Select your search type:
-   - Simple Search: Quick results with basic information
-   - Detailed Search: Comprehensive results with user feedback analysis
-4. Click "Find The ONE" to start your search
-5. Watch the progress bar and fun messages while the search completes
-6. Browse through the results to find the best option for your needs
-
-## Search Process
-
-- Simple searches typically take 1-2 minutes
-- Detailed searches with user feedback analysis may take 2-3 minutes
-- Progress bar and countdown timer show estimated completion time
-- Fun messages keep you entertained during the search
-- Results are automatically displayed when ready
+3. Select your preferred ranking method:
+   - By Relevance: Results will be sorted by search relevance
+   - By Ratings & Comments Analysis: Results will be sorted by ratings and will include summaries of user comments
+4. Click "Find The ONE" to get your results
+5. Browse through the results to find the best option for your needs
 
 ## Testing
 

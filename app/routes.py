@@ -1,5 +1,12 @@
-def register_blueprints(app):
-    """Register all blueprints with the Flask application."""
+"""Blueprint registration for the application."""
+from flask import Flask
+
+def register_blueprints(app: Flask) -> None:
+    """Register all blueprints with the Flask application.
+    
+    Args:
+        app: The Flask application instance
+    """
     from app.main import bp as main_bp
     from app.auth import bp as auth_bp
     
